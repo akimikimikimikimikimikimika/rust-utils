@@ -4,7 +4,7 @@ use super::*;
 
 /// 有限回のみ繰り返すイテレータを生成するモジュール
 mod cycle_n {
-	use super::*;
+	use super::compose_struct;
 
 	compose_struct! {
 		pub trait ICS = Iterator + Clone + Sized;
@@ -53,8 +53,8 @@ mod cycle_n {
 			match (self.original.size_hint(),self.whole_count) {
 				((0,Some(0)),_)|(_,0) => (0,Some(0)),
 				((l,u),n) => (
-					l.checked_mul(&n).unwrap_or(usize::MAX),
-					u.and_then(|u| u.checked_mul(&n) )
+					l.checked_mul(n).unwrap_or(usize::MAX),
+					u.and_then(|u| u.checked_mul(n) )
 				)
 			}
 		}
