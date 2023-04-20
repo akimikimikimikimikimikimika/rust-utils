@@ -1,9 +1,9 @@
 [alias]
-debug = "build --profile full-debug --features numerics,nd,logging,time_description"
-normal = "build --profile default --features numerics,nd,logging,time_description"
-optimized = "build --profile optimized --features numerics,nd,logging,time_description"
-exec = "run --profile default --features numerics,nd,logging,time_description"
-syntax = "check --profile default --features numerics,nd,logging,time_description"
+debug = "build --profile full-debug"
+normal = "build --profile default"
+optimized = "build --profile optimized"
+exec = "run --profile default"
+syntax = "check --profile default"
 
 [build]
 target-dir = "target.nosync"

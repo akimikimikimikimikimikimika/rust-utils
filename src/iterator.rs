@@ -1,90 +1,112 @@
 use super::*;
-use std::cmp;
 
-pub trait IteratorExtension<I> where I: Iterator {
 
-	fn cycle_n(self,repeat:usize) -> CycleN<Self>
-		where Self: Clone + Sized;
 
-	fn min_max(self) -> Option<(I::Item,I::Item)>
-		where I: Sized, I::Item: Clone + Ord;
-	fn min_max_by<F>(self,compare:F) -> Option<(I::Item,I::Item)> where
-		I: Sized, I::Item: Clone + Ord,
-		F: FnMut(&I::Item,&I::Item) -> cmp::Ordering;
+/// 有限回のみ繰り返すイテレータを生成するモジュール
+mod cycle_n {
+	use super::*;
 
-}
-
-impl<I> IteratorExtension<I> for I where I: Iterator {
-
-	fn cycle_n(self,repeat:usize) -> CycleN<Self>
-		where Self: Clone + Sized
-	{
-		CycleN { iterator: self.clone(), original: self, whole_count: repeat, current_count: repeat }
+	compose_struct! {
+		pub trait ICS = Iterator + Clone + Sized;
 	}
 
-
-
-	fn min_max(self) -> Option<(I::Item,I::Item)>
-		where I: Sized, I::Item: Clone + Ord
-	{
-		self.min_max_by(Ord::cmp)
+	pub trait IteratorCycleNExtension<I: ICS> {
+		/// 有限回のみ繰り返すイテレータを生成する
+		fn cycle_n(self,repeat:usize) -> CycleN<I>;
 	}
 
-	fn min_max_by<F>(mut self,mut compare:F) -> Option<(I::Item,I::Item)> where
-		I: Sized, I::Item: Clone + Ord,
-		F: FnMut(&I::Item,&I::Item) -> cmp::Ordering
-	{
-		let first = self.next()?;
-		Some( self.fold(
-			(first.clone(),first),
-			move |(min_val,max_val),item| {
-				(
-					cmp::min_by(min_val,item.clone(),&mut compare),
-					cmp::max_by(max_val,item,&mut compare)
+	impl<I: ICS> IteratorCycleNExtension<I> for I {
+		fn cycle_n(self,repeat:usize) -> CycleN<I> {
+			CycleN { iterator: self.clone(), original: self, whole_count: repeat, current_count: repeat }
+		}
+	}
+
+	/// 有限回のみ繰り返すイテレータ
+	#[derive(Clone)]
+	pub struct CycleN<I: ICS> {
+		original: I,
+		iterator: I,
+		whole_count: usize,
+		current_count: usize
+	}
+
+	impl<I: ICS> Iterator for CycleN<I> {
+
+		type Item = I::Item;
+
+		#[inline]
+		fn next(&mut self) -> Option<Self::Item> {
+			match (self.iterator.next(),self.current_count) {
+				(_,0) => None,
+				(None,1) => None,
+				(None,_) => {
+					self.current_count -= 1;
+					self.iterator = self.original.clone();
+					self.iterator.next()
+				},
+				(s,_) => s
+			}
+		}
+
+		#[inline]
+		fn size_hint(&self) -> (usize, Option<usize>) {
+			match (self.original.size_hint(),self.whole_count) {
+				((0,Some(0)),_)|(_,0) => (0,Some(0)),
+				((l,u),n) => (
+					l.checked_mul(&n).unwrap_or(usize::MAX),
+					u.and_then(|u| u.checked_mul(&n) )
 				)
 			}
-		) )
+		}
+
 	}
 
 }
 
 
 
-#[derive(Clone)]
-pub struct CycleN<I> {
-	original: I,
-	iterator: I,
-	whole_count: usize,
-	current_count: usize
-}
+/// イテレータに最大/最小を同時に計算するメソッドを追加するモジュール
+mod min_max {
+	use super::*;
+	use std::cmp::{
+		Ordering,Ord,
+		min_by,max_by
+	};
 
-impl<I> Iterator for CycleN<I> where I: Clone + Iterator {
-
-	type Item = I::Item;
-
-	#[inline]
-	fn next(&mut self) -> Option<Self::Item> {
-		match (self.iterator.next(),self.current_count) {
-			(_,0) => None,
-			(None,1) => None,
-			(None,_) => {
-				self.current_count -= 1;
-				self.iterator = self.original.clone();
-				self.iterator.next()
-			},
-			(s,_) => s
-		}
+	compose_struct! {
+		pub type OptMinMax<T> = Option<(T,T)>;
+		pub trait Iter<T> = Iterator<Item=T> + Sized;
+		pub trait Item = Clone + Ord;
+		pub trait OrdFn<T> = FnMut(&T,&T) -> Ordering;
 	}
 
-	#[inline]
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		match (self.original.size_hint(),self.whole_count) {
-			((0,Some(0)),_)|(_,0) => (0,Some(0)),
-			((l,u),n) => (
-				l.checked_mul(n).unwrap_or(usize::MAX),
-				u.and_then(|u| u.checked_mul(n) )
-			)
+	pub trait IteratorMinMaxExtension<I,T> {
+		/// イテレータに対して最大値と最小値の両方を同時に計算する
+		fn min_max(self) -> OptMinMax<T>;
+		/// イテレータに対して指定した計算方法を用いて最大値と最小値の両方を同時に計算する
+		fn min_max_by(self,compare:impl OrdFn<T>) -> OptMinMax<T>;
+	}
+
+	impl<I:Iter<T>,T:Item> IteratorMinMaxExtension<I,T> for I {
+
+		fn min_max(self) -> OptMinMax<T> {
+			self.min_max_by(Ord::cmp)
 		}
+
+		fn min_max_by(mut self,mut compare:impl OrdFn<T>)
+		-> OptMinMax<T> {
+			let first = self.next()?;
+			Some( self.fold(
+				(first.clone(),first),
+				move |(min_val,max_val),item| {
+					(
+						min_by(min_val,item.clone(),&mut compare),
+						max_by(max_val,item,&mut compare)
+					)
+				}
+			) )
+		}
+
 	}
 
 }

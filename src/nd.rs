@@ -14,7 +14,7 @@ pub use nd::{
 
 
 /// 場の量の一般的な型を提供するモジュール
-mod field_value_types {
+mod array_types {
 	use super::*;
 	use ndarray as nd;
 
@@ -60,7 +60,7 @@ mod field_value_types {
 	pub type AV3<'a> = A<VR<'a>,Dim3>;
 
 }
-pub use field_value_types::*;
+pub use array_types::*;
 
 
 
