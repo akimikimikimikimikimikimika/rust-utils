@@ -1,0 +1,43 @@
+[alias]
+debug = "build --profile full-debug --features numerics,nd,logging,time_description"
+normal = "build --profile default --features numerics,nd,logging,time_description"
+optimized = "build --profile optimized --features numerics,nd,logging,time_description"
+exec = "run --profile default --features numerics,nd,logging,time_description"
+syntax = "check --profile default --features numerics,nd,logging,time_description"
+
+[build]
+target-dir = "target.nosync"
+rustflags = [
+	"--emit","link",
+	"-C","relocation-model=pic"
+]
+
+[profile.full-debug]
+inherits = "dev"
+opt-level = 0
+debug = 2
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+panic = "unwind"
+incremental = true
+
+[profile.default]
+inherits = "release"
+opt-level = 2
+debug = 1
+strip = "none"
+debug-assertions = false
+overflow-checks = true
+panic = "unwind"
+incremental = true
+
+[profile.optimized]
+inherits = "release"
+opt-level = 2
+debug = 0
+strip = "symbols"
+debug-assertions = false
+overflow-checks = false
+panic = "abort"
+incremental = false

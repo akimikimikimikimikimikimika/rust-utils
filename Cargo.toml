@@ -1,0 +1,29 @@
+# 幾つかの基礎的なツールを含むライブラリ
+
+[package]
+name = "utils"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+num = { version = "*", optional = true }
+log = { version = "*", optional = true }
+time = { version = "*", optional = true, features = ["formatting", "local-offset", "std"] }
+once_cell = { version = "*", optional = true }
+ndarray = { version = "*",features = ["rayon"], optional = true }
+macros = { path = "macros" }
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+
+numerics = ["num"]
+nd = ["ndarray"]
+logging = ["log"]
+time_description = ["time", "once_cell"]
+time_older = ["time_description"]
+# current_time を使用する際に、依存関係の都合上、古いバージョンの time を使用する必要があれば、 time_older フィーチャーを有効にします。有効にすると、古いバージョンに合わせてコードが選択され、コンパイルを実行します。

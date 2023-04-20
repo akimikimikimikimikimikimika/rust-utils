@@ -1,0 +1,10 @@
+{
+	// rust-analyzer を動作させるためには Cargo.toml を指定する必要がある
+	"rust-analyzer.linkedProjects": [
+		"Cargo.toml",
+		"macros/Cargo.toml",
+		"./Cargo.toml"
+	],
+	"rust-analyzer.cargo.features": ["numerics","nd","logging","time_description"]
+
+}
