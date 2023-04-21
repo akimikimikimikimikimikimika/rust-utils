@@ -12,10 +12,6 @@ pub use num::*;
 mod primitive_funcs {
 	use super::*;
 
-	pub fn abs<S:Signed>(x:S) -> S {
-		return x.abs();
-	}
-
 	pub fn exp<F:Float>(x:F) -> F {
 		return x.exp();
 	}
@@ -63,6 +59,10 @@ pub use primitive_funcs::*;
 mod hypot {
 	use super::*;
 
+	compose_struct! {
+		pub trait Iter<T> = IntoIterator<Item=T>;
+	}
+
 	pub fn hypot<F:Float>(x:F,y:F) -> F {
 		return y.hypot(x);
 	}
@@ -84,7 +84,6 @@ pub use hypot::*;
 
 
 
-#[cfg(feature="numerics")]
 /// 標準の複合代入演算子と同様の機能を幾つかの演算に適用する
 mod operate_and_assign {
 	use super::*;
@@ -128,6 +127,7 @@ mod operate_and_assign {
 		/// もう一方の値と比較し、大きい方を代入する
 		fn max_assign(&mut self,rhs:Self);
 	}
+	#[cfg(feature="numerics")]
 	impl<T:Float> MinMaxAssignForFloat for T {
 		fn min_assign(&mut self,rhs:Self) {
 			*self = (*self).min(rhs);
@@ -138,8 +138,7 @@ mod operate_and_assign {
 	}
 
 }
-#[cfg(feature="numerics")]
-pub use operate_and_assign::*;
+// pub use operate_and_assign::*;
 
 
 
@@ -173,7 +172,6 @@ mod min_max {
 	}
 
 }
-pub use min_max::*;
 
 
 
@@ -242,8 +240,6 @@ mod float_min_max {
 	}
 
 }
-#[cfg(feature="numerics")]
-pub use float_min_max::*;
 
 
 
@@ -278,6 +274,7 @@ mod float_rounding {
 	}
 	type R = FloatRoundingRule;
 
+	/// 浮動小数に丸めるメソッドを実装するトレイト
 	pub trait Rounding {
 		/// 指定した丸め方で浮動小数を丸めます
 		fn rounding(&self,rule:R) -> Self;
@@ -524,21 +521,32 @@ mod float_rounding {
 
 	}
 
+	/// 型ジェネリックに floor/ceil 分岐の境界値を与えるトレイト
 	trait F: Float {
 
+		#[inline]
 		fn val_p05() -> Self;
+		#[inline]
 		fn val_p10() -> Self;
+		#[inline]
 		fn val_p15() -> Self;
+		#[inline]
 		fn val_p20() -> Self;
+		#[inline]
 		fn val_m05() -> Self;
+		#[inline]
 		fn val_m10() -> Self;
+		#[inline]
 		fn val_m15() -> Self;
+		#[inline]
 		fn val_m20() -> Self;
 
+		#[inline]
 		/// 10^p
 		fn pow10(p:i32) -> Self;
 
 	}
+	/// トレイト `F` の実装を与えるマクロ
 	macro_rules! float_impl {
 		($fxx:ty) => {
 			impl F for $fxx {
@@ -559,6 +567,7 @@ mod float_rounding {
 
 	#[cfg(test)]
 	#[test]
+	/// 丸める処理が適切に動作するかテストする
 	fn test_rounding() {
 		macro_rules! test_items {
 			( Input: $($iv:literal)+ $( $case:ident: $($rc:literal)+ )+ ) => {
@@ -619,7 +628,7 @@ mod float_rounding {
 
 }
 #[cfg(feature="numerics")]
-pub use float_rounding::*;
+pub use float_rounding::FloatRoundingRule;
 
 
 

@@ -113,22 +113,58 @@ mod min_max {
 
 
 
-pub struct Zip3<A,B,C> {
-	a: A, b: B, c: C
+/// 同一要素からなるタプル型を配列に変換するモジュール
+mod tuple_to_array {
+
+	/// タプルを配列に変換します
+	pub trait TupleToArray<T,const N:usize> {
+		/// タプルを配列に変換します
+		fn to_array(self) -> [T;N];
+	}
+
+	/// `impl` をマクロによりまとめて実行する
+	macro_rules! impl_t2a {
+		(indices: $i0:tt $($i:tt)+ ) => {
+			impl_t2a! {@each T T $i0 | $($i),+ }
+		};
+		(@each $t:ident $($tx:ident $x:tt),+ | $y0:tt $(,$y:tt)* ) => {
+			impl<$t> TupleToArray<$t,$y0> for ($($tx,)+) {
+				fn to_array(self) -> [T;$y0] {
+					[ $(self.$x),+ ]
+				}
+			}
+			impl_t2a! {@each $t $($tx $x,)+ $t $y0 | $($y),* }
+		};
+		(@each $t:ident $($tx:ident $x:tt),+ | ) => {};
+	}
+	impl_t2a!(indices: 0 1 2 3 4 5 6 7 8 9 10 11 12 );
+
 }
 
-impl<A,B,C> Iterator for Zip3<A,B,C> where A: Iterator, B: Iterator, C: Iterator {
-	type Item = (A::Item,B::Item,C::Item);
-	fn next(&mut self) -> Option<Self::Item> {
-		match (self.a.next(),self.b.next(),self.c.next()) {
-			(Some(a),Some(b),Some(c)) => Some((a,b,c)),
-			_ => None
+
+
+/// 複数個のイテレータによる Zip を実装するモジュール
+mod multi_zip {
+	use super::*;
+
+	pub struct Zip3<A,B,C> {
+		a: A, b: B, c: C
+	}
+
+	impl<A,B,C> Iterator for Zip3<A,B,C> where A: Iterator, B: Iterator, C: Iterator {
+		type Item = (A::Item,B::Item,C::Item);
+		fn next(&mut self) -> Option<Self::Item> {
+			match (self.a.next(),self.b.next(),self.c.next()) {
+				(Some(a),Some(b),Some(c)) => Some((a,b,c)),
+				_ => None
+			}
+		}
+		fn size_hint(&self) -> (usize, Option<usize>) {
+			let (a,b,c) = (self.a.size_hint(),self.b.size_hint(),self.c.size_hint());
+			let l = [a.0,b.0,c.0].minimum();
+			let u = [a.1,b.1,c.1].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
+			(l,u)
 		}
 	}
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		let (a,b,c) = (self.a.size_hint(),self.b.size_hint(),self.c.size_hint());
-		let l = [a.0,b.0,c.0].minimum();
-		let u = [a.1,b.1,c.1].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
-		(l,u)
-	}
+
 }
