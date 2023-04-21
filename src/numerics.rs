@@ -288,18 +288,231 @@ mod float_rounding {
 	impl<T:F> Rounding for T {
 
 		fn rounding(&self,rule:R) -> Self {
-			match rule {
-				R::Down => self.floor(),
-				R::Up => self.ceil(),
-				R::TowardZero => self.toward_zero(),
-				R::TowardInfinity => self.toward_infinity(),
-				R::ToNearestOrDown => self.to_nearest_or_down(),
-				R::ToNearestOrUp => self.to_nearest_or_up(),
-				R::ToNearestOrTowardZero => self.to_nearest_or_toward_zero(),
-				R::ToNearestOrTowardInfinity => self.to_nearest_or_toward_infinity(),
-				R::ToNearestOrEven => self.to_nearest_or_even(),
-				R::ToNearestOrOdd => self.to_nearest_or_odd(),
+
+			let positive = self.is_sign_positive();
+			let negative = self.is_sign_negative();
+
+			/// * それぞれの丸め方ごとに floor ceil のルールを決めるマクロ
+			/// * 例
+			/// ```rust
+			/// r! {
+			/// 	Down => floor // 丸め方 Down は無条件に floor
+			/// 	TowardZero => % 2 { // 丸め方 TowardZero の条件を指定
+			/// 		// 2で割った余りによって分岐 ( % n を省略すると余りによる分岐は行いません)
+			/// 		+ >= 1.5 => ceil  // 正の値で、余りが 1.5 より大きい場合は ceil 関数を適用
+			/// 		-        => floor // 余りによる分岐は省略可能 (負の値は floor になる)
+			/// 	}
+			/// }
+			/// ```
+			macro_rules! r {
+
+				// 入力 -> それぞれの丸め方ごとに処理する
+				( match { $($any:tt)+ } ) => {
+					r!(@arm $($any)+ )
+				};
+
+				// 丸め方の1つ: 無条件に floor/ceil が決まる場合
+				(@arm
+					$( [$($parsed:tt)+] )*
+					$strategy:ident => $func:ident
+					$($not_yet:tt)*
+				) => { r!(@arm
+					$( [$($parsed)+] )*
+					[ $strategy => self.$func() ]
+					$($not_yet)*
+				) };
+				// 丸め方の1つ: 条件分岐がある場合
+				(@arm
+					$( [$($parsed:tt)+] )*
+					$strategy:ident => $( % $rem:tt )? { $($sub_arms:tt)+ }
+					$($not_yet:tt)*
+				) => { r!(@arm
+					$( [$($parsed)+] )*
+					[
+						$strategy => r!(@m
+							x(
+								$( rem($rem) )?
+								input( (
+									positive, negative,
+									$( (*self) % r!(@rem $rem) )?
+								) )
+							)
+							y() z($($sub_arms)+)
+						)
+					]
+					$($not_yet)*
+				) };
+				// 全ての丸め方のパースが終了したら呼び出す
+				(@arm $([ $arm:ident => $($content:tt)+ ])+ ) => {
+					match rule {
+						$( R::$arm => $($content)+ ),+
+					}
+				};
+
+				// 剰余の値にマッチ
+				(@rem 1) => { Self::val_p10() };
+				(@rem 2) => { Self::val_p20() };
+
+				// 以下は1つの丸め方に対して条件分岐がある場合を処理している
+				// x: パース済 y: パース中 z: 未パース
+
+				// 1つのアームを全てパースし切った後に、 match のパターンを生成
+				(@m
+					x( rem($rem:tt) input($($input:tt)+) $($x:tt)* )
+					y( sign($sp:tt,$sn:tt) op($($op:tt)+) threshold($t:ident) func($func:ident) )
+					$($z:tt)+
+				) => { r!(@m
+					x(
+						rem($rem) input($($input)+) $($x)*
+						pattern(($sp,$sn,r)) condition(r $($op)+ Self::$t()) func($func)
+					)
+					y() $($z)+
+				) };
+				(@m
+					x( rem($rem:tt) input($($input:tt)+) $($x:tt)* )
+					y( sign($sp:tt,$sn:tt) func($func:ident) )
+					$($z:tt)+
+				) => { r!(@m
+					x(
+						rem($rem) input($($input)+) $($x)*
+						pattern(($sp,$sn,_)) func($func)
+					)
+					y() $($z)+
+				) };
+				(@m
+					x( input($($input:tt)+) $($x:tt)* )
+					y( sign($sp:tt,$sn:tt) func($func:ident) )
+					$($z:tt)+
+				) => { r!(@m
+					x(
+						input($($input)+) $($x)*
+						pattern(($sp,$sn)) func($func)
+					)
+					y() $($z)+
+				) };
+
+				// 正負の符号にマッチ
+				(@m x($($x:tt)+) y() z(+ $($z:tt)+) ) => {
+					r!(@m x($($x)+) y( sign(true ,false) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y() z(- $($z:tt)+) ) => {
+					r!(@m x($($x)+) y( sign(false,true ) ) z($($z)+) )
+				};
+
+				// 条件式の不等号にマッチ
+				(@m x($($x:tt)+) y($($y:tt)+) z(>= $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(>=) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(<= $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(<=) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(> $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(>) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(< $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(<) ) z($($z)+) )
+				};
+
+				// 条件式の境界値にマッチ
+				(@m x($($x:tt)+) y($($y:tt)+) z(+0.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_p05) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(+1.0 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_p10) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(+1.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_p15) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(-0.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_m05) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(-1.0 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_m10) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(-1.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_m15) ) z($($z)+) )
+				};
+
+				// アームの対応関数 (floor/ceil) にマッチ
+				(@m x($($x:tt)+) y($($y:tt)+) z(=> $func:ident $($z:tt)*) ) => {
+					r!(@m x($($x)+) y($($y)+ func($func) ) z($($z)*) )
+				};
+
+				// 全てのアームを処理した後に match 式を生成
+				(@m
+					x(
+						$( rem($rem:tt) )? input($($input:tt)+)
+						$( pattern($($p:tt)+) $( condition($($c:tt)+) )? func($func:ident) )+
+					)
+					y() z()
+				) => {
+					match $($input)+ {
+						$( $($p)+ $( if $($c)+ )? => self.$func() ,)+
+						_ => *self
+					}
+				};
+
 			}
+
+			// 丸め方に合わせて条件分岐
+			// 正でも負でもない値は NaN である
+			r! { match {
+				Down => floor
+				Up   => ceil
+				TowardZero => {
+					+ => floor
+					- => ceil
+				}
+				TowardInfinity => {
+					+ => ceil
+					- => floor
+				}
+				ToNearestOrDown => % 1 {
+					+ > +0.5 => ceil
+					+        => floor
+					- > -0.5 => ceil
+					-        => floor
+				}
+				ToNearestOrUp => % 1 {
+					+ < +0.5 => floor
+					+        => ceil
+					- < -0.5 => floor
+					-        => ceil
+				}
+				ToNearestOrTowardZero => % 1 {
+					+ > +0.5 => ceil
+					+        => floor
+					- < -0.5 => floor
+					-        => ceil
+				}
+				ToNearestOrTowardInfinity => % 1 {
+					+ < +0.5 => floor
+					+        => ceil
+					- > -0.5 => ceil
+					-        => floor
+				}
+				ToNearestOrEven => % 2 {
+					+ <= +0.5 => floor
+					+ <= +1.0 => ceil
+					+ <  +1.5 => floor
+					+         => ceil
+					- >= -0.5 => ceil
+					- >= -1.0 => floor
+					- >  -1.5 => ceil
+					-         => floor
+				}
+				ToNearestOrOdd => % 2 {
+					+ <  +0.5 => floor
+					+ <= +1.0 => ceil
+					+ <= +1.5 => floor
+					+         => ceil
+					- >  -0.5 => ceil
+					- >= -1.0 => floor
+					- >= -1.5 => ceil
+					-         => floor
+				}
+			} }
+
 		}
 
 		fn rounding_with_precision(&self,rule:R,precision:i32) -> Self {
@@ -309,90 +522,6 @@ mod float_rounding {
 			/ Self::pow10(precision)
 		}
 
-	}
-
-	macro_rules! r {
-		( $s:ident $st:ident $rem:tt { $($arms:tt)+ } ) => {
-			if !$s.is_normal() { return *$s; }
-			r!(@m x(
-				self_type($st)
-				self_val($s)
-				input( (
-					$s.is_sign_positive(),
-					(*$s) % r!(@rem $st $rem)
-				) )
-			) y() z($($arms)+) )
-		};
-		(@rem $st:ident 1 ) => { $st::val_p10() };
-		(@rem $st:ident 2 ) => { $st::val_p20() };
-
-		// x: パース済 y: パース中 z: 未パース
-		(@m
-			x( self_type($st:ident) $($x:tt)+)
-			y( sign($s:tt) op($($op:tt)+) threshold($t:ident) func($func:ident) )
-			$($z:tt)+
-		) => { r!(@m
-			x( self_type($st) $($x)+ pattern(($s,r)) condition(r $($op)+ $st::$t()) func($func) )
-			y() $($z)+
-		) };
-		(@m
-			x($($x:tt)+)
-			y( sign($s:tt) func($func:ident) )
-			$($z:tt)+
-		) => { r!(@m
-			x( $($x)+ pattern(($s,_)) func($func) )
-			y() $($z)+
-		) };
-		(@m x($($x:tt)+) y() z(+ $($z:tt)+) ) => {
-			r!(@m x($($x)+) y( sign(true ) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y() z(- $($z:tt)+) ) => {
-			r!(@m x($($x)+) y( sign(false) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(>= $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ op(>=) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(<= $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ op(<=) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(> $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ op(>) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(< $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ op(<) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(+0.5 $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ threshold(val_p05) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(+1.0 $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ threshold(val_p10) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(+1.5 $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ threshold(val_p15) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(-0.5 $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ threshold(val_m05) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(-1.0 $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ threshold(val_m10) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(-1.5 $($z:tt)+) ) => {
-			r!(@m x($($x)+) y($($y)+ threshold(val_m15) ) z($($z)+) )
-		};
-		(@m x($($x:tt)+) y($($y:tt)+) z(=> $func:ident $($z:tt)*) ) => {
-			r!(@m x($($x)+) y($($y)+ func($func) ) z($($z)*) )
-		};
-		(@m
-			x(
-				self_type($st:ident) self_val($s:ident) input($($input:tt)+)
-				$( pattern($($p:tt)+) $( condition($($c:tt)+) )? func($func:ident) )+
-			)
-			y() z()
-		) => {
-			match $($input)+ {
-				$( $($p)+ $( if $($c)+ )? => $s.$func() ),+
-			}
-		};
 	}
 
 	trait F: Float {
@@ -408,94 +537,6 @@ mod float_rounding {
 
 		/// 10^p
 		fn pow10(p:i32) -> Self;
-
-		#[inline]
-		fn toward_zero(&self) -> Self {
-			// 正でも負でもない値は NaN である
-			match (self.is_sign_positive(),self.is_sign_negative()) {
-				(true,false) => self.floor(),
-				(false,true) => self.ceil(),
-				_ => *self
-			}
-		}
-
-		#[inline]
-		fn toward_infinity(&self) -> Self {
-			// 正でも負でもない値は NaN である
-			match (self.is_sign_positive(),self.is_sign_negative()) {
-				(true,false) => self.ceil(),
-				(false,true) => self.floor(),
-				_ => *self
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_down(&self) -> Self {
-			r! { self Self 1 {
-				+ > +0.5 => ceil
-				+        => floor
-				- > -0.5 => ceil
-				-        => floor
-			} }
-		}
-
-		#[inline]
-		fn to_nearest_or_up(&self) -> Self {
-			r! { self Self 1 {
-				+ < +0.5 => floor
-				+        => ceil
-				- < -0.5 => floor
-				-        => ceil
-			} }
-		}
-
-		#[inline]
-		fn to_nearest_or_toward_zero(&self) -> Self {
-			r! { self Self 1 {
-				+ > +0.5 => ceil
-				+        => floor
-				- < -0.5 => floor
-				-        => ceil
-			} }
-		}
-
-		#[inline]
-		fn to_nearest_or_toward_infinity(&self) -> Self {
-			r! { self Self 1 {
-				+ < +0.5 => floor
-				+        => ceil
-				- > -0.5 => ceil
-				-        => floor
-			} }
-		}
-
-		#[inline]
-		fn to_nearest_or_even(&self) -> Self {
-			r! { self Self 2 {
-				+ <= +0.5 => floor
-				+ <= +1.0 => ceil
-				+ <  +1.5 => floor
-				+         => ceil
-				- >= -0.5 => ceil
-				- >= -1.0 => floor
-				- >  -1.5 => ceil
-				-         => floor
-			} }
-		}
-
-		#[inline]
-		fn to_nearest_or_odd(&self) -> Self {
-			r! { self Self 2 {
-				+ <  +0.5 => floor
-				+ <= +1.0 => ceil
-				+ <= +1.5 => floor
-				+         => ceil
-				- >  -0.5 => ceil
-				- >= -1.0 => floor
-				- >= -1.5 => ceil
-				-         => floor
-			} }
-		}
 
 	}
 	macro_rules! float_impl {
