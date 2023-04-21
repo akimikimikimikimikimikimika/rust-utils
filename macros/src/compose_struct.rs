@@ -704,7 +704,7 @@ mod parser {
 			let ParsingResult {
 				name, mut generics, body, attr, vis, src, ..
 			} = pr;
-			if generics.is_empty() {
+			if !generics.is_empty() {
 				generics = quote!( <#generics> );
 			}
 
@@ -2440,13 +2440,19 @@ mod compose {
 			} = self;
 			let attr = attributes.compose(global);
 			let t = Ident::new(&format!("GenericTypeFor{}",name),Span::call_site());
-			let g = match generics.is_empty() {
-				true => t.to_token_stream(),
-				false => quote!( #t,#generics )
+			let (gt,gi) = match generics.is_empty() {
+				true => (
+					TS::new(),
+					quote!(<#t>)
+				),
+				false => (
+					quote!(<#generics>),
+					quote!(<#t,#generics>)
+				)
 			};
 			let this = quote!(
-				#attr #visibility trait #name: #artifact {}
-				impl<#g> #name for #t where #t: #artifact {}
+				#attr #visibility trait #name #gt: #artifact {}
+				impl #gi #name #gt for #t where #t: #artifact {}
 			);
 			*global = quote!( #global #this );
 			TS::new()

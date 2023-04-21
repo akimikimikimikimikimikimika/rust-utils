@@ -19,7 +19,7 @@ macros = { path = "macros" }
 crate-type = ["rlib"]
 
 [features]
-default = []
+default = ["numerics","nd","logging","time_description"]
 
 numerics = ["num"]
 nd = ["ndarray"]

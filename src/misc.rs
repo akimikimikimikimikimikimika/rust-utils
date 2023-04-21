@@ -8,13 +8,13 @@ mod types {
 
 	use std::{
 		fmt::Display,
-		convert::{Into,AsRef},
+		convert::AsRef,
 		path::Path
 	};
 
 	compose_struct! {
 		/// 文字列を受け取るためのジェネリックな型
-		pub trait AnyStr = Into<String> + Display;
+		pub trait AnyStr = AsRef<str> + Display;
 		/// `Path` になりそうな型を受け取るためのジェネリックな型
 		pub trait AnyPath = AsRef<Path> + Display;
 	}

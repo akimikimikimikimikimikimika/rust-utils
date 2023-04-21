@@ -1,13 +1,14 @@
+use super::*;
+
 #[cfg(feature="numerics")]
 extern crate num;
 #[cfg(feature="numerics")]
-pub use num::{
-	one,zero,
-	Float,Integer,Signed,Unsigned
-};
+pub use num::*;
+
+
 
 #[cfg(feature="numerics")]
-/// プリミティブな関数をドット演算子を使わない一般的な表記で使えるようにする
+/// プリミティブな関数を `x.sin()` ではなく `sin(x)` のような表記で使えるようにする
 mod primitive_funcs {
 	use super::*;
 
@@ -35,7 +36,7 @@ mod primitive_funcs {
 		return x.tan();
 	}
 
-	pub fn sinh(x:f64) -> f64 {
+	pub fn sinh<F:Float>(x:F) -> F {
 		return x.sinh();
 	}
 
@@ -67,36 +68,13 @@ mod hypot {
 	}
 
 	pub trait HypotFn<T> {
-		fn hypot(&self) -> T;
+		fn hypot(self) -> T;
 	}
-	impl<T:Float,const N:usize> HypotFn<T> for [T;N] {
-		fn hypot(&self) -> T {
-			match N {
-				0 => T::zero(),
-				1 => self[0],
-				2 => self[0].hypot(self[1]),
-				_ => [self[0],self[1..].hypot()].hypot()
-			}
-		}
-	}
-	impl<T:Float> HypotFn<T> for [T] {
-		fn hypot(&self) -> T {
-			match self.len() {
-				0 => T::zero(),
-				1 => self[0],
-				2 => self[0].hypot(self[1]),
-				_ => [self[0],self[1..].hypot()].hypot()
-			}
-		}
-	}
-	impl<T:Float> HypotFn<T> for (T,T) {
-		fn hypot(&self) -> T {
-			self.0.hypot(self.1)
-		}
-	}
-	impl<T:Float> HypotFn<T> for (T,T,T) {
-		fn hypot(&self) -> T {
-			self.0.hypot(self.1).hypot(self.2)
+	impl<T:Float, I:Iter<T>> HypotFn<T> for I {
+		fn hypot(self) -> T {
+			self.into_iter()
+			.reduce( |a,v| a.hypot(v) )
+			.unwrap_or(T::zero())
 		}
 	}
 
@@ -165,66 +143,37 @@ pub use operate_and_assign::*;
 
 
 
-/// `Ord` に従う型の最大/最小を多数の要素でも使えるようにする
-mod order_min_max {
+/// `Ord` に従う型の最大/最小を多数の要素に対して実行する
+mod min_max {
+	use super::*;
 
-	/// 配列の中から最大/最小を決定する
-	pub trait MinMaxFns<T> {
-		/// 配列の中から最小の値を計算します
-		fn minimum(&self) -> T;
-		/// 配列の中から最大の値を計算します
-		fn maximum(&self) -> T;
+	compose_struct! {
+		pub trait Iter<T> = IntoIterator<Item=T>;
 	}
 
-	impl<T:Ord+Copy> MinMaxFns<T> for [T] {
-		fn minimum(&self) -> T {
-			match self.len() {
-				0 => { panic!("minimizing empty slice is not allowed"); }
-				1 => self[0],
-				2 => self[0].min(self[1]),
-				_ => self[0].min(self[1..].minimum())
-			}
-		}
-		fn maximum(&self) -> T {
-			match self.len() {
-				0 => { panic!("maximizing empty slice is not allowed"); }
-				1 => self[0],
-				2 => self[0].max(self[1]),
-				_ => self[0].max(self[1..].maximum())
-			}
-		}
+	/// 複数の要素の中から最大/最小を決定する
+	pub trait MinMax<T> {
+		/// 複数の要素の中から最小の値を計算します
+		fn minimum(self) -> T;
+		/// 複数の要素の中から最大の値を計算します
+		fn maximum(self) -> T;
 	}
 
-	impl<T:Ord+Copy,const N:usize> MinMaxFns<T> for [T;N] {
-		fn minimum(&self) -> T {
-			match N {
-				0 => { panic!("minimizing empty slice is not allowed"); }
-				1 => self[0],
-				2 => self[0].min(self[1]),
-				_ => self[0].min(self[1..].minimum())
-			}
+	impl<T:Ord,I:Iter<T>> MinMax<T> for I {
+		fn minimum(self) -> T {
+			self.into_iter()
+			.reduce( |a,v| a.min(v) )
+			.expect("minimizing empty slice is not allowed")
 		}
-		fn maximum(&self) -> T {
-			match self.len() {
-				0 => { panic!("maximizing empty slice is not allowed"); }
-				1 => self[0],
-				2 => self[0].max(self[1]),
-				_ => self[0].max(self[1..].maximum())
-			}
-		}
-	}
-
-	impl<T:Ord+Copy> MinMaxFns<T> for Vec<T> {
-		fn minimum(&self) -> T {
-			self.as_slice().minimum()
-		}
-		fn maximum(&self) -> T {
-			self.as_slice().maximum()
+		fn maximum(self) -> T {
+			self.into_iter()
+			.reduce( |a,v: T| a.max(v) )
+			.expect("maximizing empty slice is not allowed")
 		}
 	}
 
 }
-pub use order_min_max::*;
+pub use min_max::*;
 
 
 
@@ -233,41 +182,63 @@ pub use order_min_max::*;
 mod float_min_max {
 	use super::*;
 
-	#[derive(Clone,Copy,PartialEq,Eq)]
-	/// 浮動小数型の演算の規則を定義します
-	pub enum NaNRule {
-		/// 2つの値のうち一方に NaN が含まれている場合は NaN が返されます
-		Propagate,
-		/// 2つの値のうち一方が NaN の場合は他方の値を返し、両方が NaN の場合のみ NaN を返します
-		Ignore,
+	compose_struct! {
+		pub trait Iter<T> = IntoIterator<Item=T>;
+		pub trait ReduceFn<T> = Fn(T,T) -> T;
 	}
 
-	type N = NaNRule;
-
-	pub trait MinMaxFloat<T> {
-		/// 複数の浮動小数の中から最小の値を与えます。 `rule` には NaN の取り扱い方を指定します。
-		fn minimum(self,rule:N) -> T;
-		/// 複数の浮動小数の中から最大の値を与えます。 `rule` には NaN の取り扱い方を指定します。
-		fn maximum(self,rule:N) -> T;
+	pub trait MinMax<T> {
+		/// 複数の浮動小数の中から最小の値を与えます。値に NaN が含まれていれば無視されます。全ての値が NaN の場合や値が含まれていない場合は NaN を返します。
+		fn minimum(self) -> T;
+		/// 複数の浮動小数の中から最大の値を与えます。値に NaN が含まれていれば無視されます。全ての値が NaN の場合や値が含まれていない場合は NaN を返します。
+		fn maximum(self) -> T;
+		/// 複数の浮動小数の中から最小の値を与えます。値のうちどれか1つでも NaN がある場合や値が含まれていない場合 NaN を返します。
+		fn minimum_propagate(self) -> T;
+		/// 複数の浮動小数の中から最大の値を与えます。値のうちどれか1つでも NaN がある場合や値が含まれていない場合 NaN を返します。
+		fn maximum_propagate(self) -> T;
 	}
 
-	impl<T:Float> MinMaxFloat<T> for (T,T) {
-		fn minimum(self,rule:N) -> T {
-			match (self.0.is_nan(),self.1.is_nan(),rule) {
-				(false,false,_) => self.0.min(self.1),
-				(false,true,N::Ignore) => self.0,
-				(true,false,N::Ignore) => self.1,
-				(true,_,N::Propagate)|(_,true,N::Propagate)|(true,true,N::Ignore) => T::nan()
-			}
+	impl<T:Float,I:Iter<T>> MinMax<T> for I {
+		fn minimum(self) -> T {
+			reduce_ignore_nan(self,min)
 		}
-		fn maximum(self,rule:N) -> T {
-			match (self.0.is_nan(),self.1.is_nan(),rule) {
-				(false,false,_) => self.0.max(self.1),
-				(false,true,N::Ignore) => self.0,
-				(true,false,N::Ignore) => self.1,
-				(true,_,N::Propagate)|(_,true,N::Propagate)|(true,true,N::Ignore) => T::nan()
-			}
+		fn maximum(self) -> T {
+			reduce_ignore_nan(self,max)
 		}
+		fn minimum_propagate(self) -> T {
+			reduce_propagate_nan(self,min)
+		}
+		fn maximum_propagate(self) -> T {
+			reduce_propagate_nan(self,max)
+		}
+	}
+
+	/// 最小値
+	fn min<T:Float>(a:T,v:T) -> T { a.min(v) }
+	/// 最大値
+	fn max<T:Float>(a:T,v:T) -> T { a.max(v) }
+
+	/// 複数の要素に対する処理を実装。 NaN は無視する。
+	fn reduce_ignore_nan<T:Float>(ii:impl Iter<T>,f:impl ReduceFn<T>) -> T {
+		ii.into_iter()
+		.filter(|v| !v.is_nan())
+		.reduce(f)
+		.unwrap_or(T::nan())
+	}
+
+	/// 複数の要素に対する処理を実装。 NaN は伝播する。
+	fn reduce_propagate_nan<T: Float>(ii:impl Iter<T>,f:impl ReduceFn<T>) -> T {
+		let mut iter = ii.into_iter();
+		let mut m = match iter.next() {
+			None => { return T::nan(); },
+			Some(v) if v.is_nan() => { return T::nan(); },
+			Some(v) => v,
+		};
+		for v in iter {
+			if v.is_nan() { return T::nan(); }
+			m = f(m,v);
+		}
+		m
 	}
 
 }
@@ -279,6 +250,7 @@ pub use float_min_max::*;
 #[cfg(feature="numerics")]
 /// `Float` 型を幾つかの丸め方のルールに従って丸められるようにする。
 mod float_rounding {
+	use super::*;
 
 	#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 	/// 浮動小数の丸め方を指定します
@@ -313,135 +285,277 @@ mod float_rounding {
 		fn rounding_with_precision(&self,rule:R,precision:i32) -> Self;
 	}
 
-	trait RoundingInternal {
-		fn toward_zero(&self) -> Self;
-		fn toward_infinity(&self) -> Self;
-		fn to_nearest_or_down(&self) -> Self;
-		fn to_nearest_or_up(&self) -> Self;
-		fn to_nearest_or_toward_zero(&self) -> Self;
-		fn to_nearest_or_toward_infinity(&self) -> Self;
-		fn to_nearest_or_even(&self) -> Self;
-		fn to_nearest_or_odd(&self) -> Self;
-	}
-	use std::num::FpCategory as C;
-	impl RoundingInternal for f64 {
-
-		#[inline]
-		fn toward_zero(&self) -> Self {
-			match (self.is_sign_positive(),self.is_sign_negative()) {
-				(true,false) => self.floor(),
-				(false,true) => self.ceil(),
-				_ => *self
-			}
-		}
-
-		#[inline]
-		fn toward_infinity(&self) -> Self {
-			match (self.is_sign_positive(),self.is_sign_negative()) {
-				(true,false) => self.ceil(),
-				(false,true) => self.floor(),
-				_ => *self
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_down(&self) -> Self {
-			if !matches!(self.classify(),C::Normal|C::Subnormal) { return *self; }
-			match (self.is_sign_positive(),(*self)%1.0) {
-				(true,r) if r > 0.5 => self.ceil(),
-				(true,_) => self.floor(),
-				(false,r) if r > -0.5 => self.ceil(),
-				(false,_) => self.floor()
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_up(&self) -> Self {
-			if !matches!(self.classify(),C::Normal|C::Subnormal) { return *self; }
-			match (self.is_sign_positive(),(*self)%1.0) {
-				(true,r) if r < 0.5 => self.floor(),
-				(true,_) => self.ceil(),
-				(false,r) if r < -0.5 => self.floor(),
-				(false,_) => self.ceil()
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_toward_zero(&self) -> Self {
-			if !matches!(self.classify(),C::Normal|C::Subnormal) { return *self; }
-			match (self.is_sign_positive(),(*self)%1.0) {
-				(true,r) if r > 0.5 => self.ceil(),
-				(true,_) => self.floor(),
-				(false,r) if r < -0.5 => self.floor(),
-				(false,_) => self.ceil()
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_toward_infinity(&self) -> Self {
-			if !matches!(self.classify(),C::Normal|C::Subnormal) { return *self; }
-			match (self.is_sign_positive(),(*self)%1.0) {
-				(true,r) if r < 0.5 => self.floor(),
-				(true,_) => self.ceil(),
-				(false,r) if r > -0.5 => self.ceil(),
-				(false,_) => self.floor()
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_even(&self) -> Self {
-			if !matches!(self.classify(),C::Normal|C::Subnormal) { return *self; }
-			match (self.is_sign_positive(),(*self)%2.0) {
-				(true,r) if r <= 0.5 => self.floor(),
-				(true,r) if r <= 1.0 => self.ceil(),
-				(true,r) if r <  1.5 => self.floor(),
-				(true,_) => self.ceil(),
-				(false,r) if r >= -0.5 => self.ceil(),
-				(false,r) if r >= -1.0 => self.floor(),
-				(false,r) if r >  -1.5 => self.ceil(),
-				(false,_) => self.floor(),
-			}
-		}
-
-		#[inline]
-		fn to_nearest_or_odd(&self) -> Self {
-			if !matches!(self.classify(),C::Normal|C::Subnormal) { return *self; }
-			match (self.is_sign_positive(),(*self)%2.0) {
-				(true,r) if r <  0.5 => self.floor(),
-				(true,r) if r <= 1.0 => self.ceil(),
-				(true,r) if r <= 1.5 => self.floor(),
-				(true,_) => self.ceil(),
-				(false,r) if r >  -0.5 => self.ceil(),
-				(false,r) if r >= -1.0 => self.floor(),
-				(false,r) if r >= -1.5 => self.ceil(),
-				(false,_) => self.floor(),
-			}
-		}
-
-	}
-
-	impl Rounding for f64 {
+	impl<T:F> Rounding for T {
 
 		fn rounding(&self,rule:R) -> Self {
-			match rule {
-				R::Down => self.floor(),
-				R::Up => self.ceil(),
-				R::TowardZero => self.toward_zero(),
-				R::TowardInfinity => self.toward_infinity(),
-				R::ToNearestOrDown => self.to_nearest_or_down(),
-				R::ToNearestOrUp => self.to_nearest_or_up(),
-				R::ToNearestOrTowardZero => self.to_nearest_or_toward_zero(),
-				R::ToNearestOrTowardInfinity => self.to_nearest_or_toward_infinity(),
-				R::ToNearestOrEven => self.to_nearest_or_even(),
-				R::ToNearestOrOdd => self.to_nearest_or_odd(),
+
+			let positive = self.is_sign_positive();
+			let negative = self.is_sign_negative();
+
+			/// * それぞれの丸め方ごとに floor ceil のルールを決めるマクロ
+			/// * 例
+			/// ```rust
+			/// r! {
+			/// 	Down => floor // 丸め方 Down は無条件に floor
+			/// 	TowardZero => % 2 { // 丸め方 TowardZero の条件を指定
+			/// 		// 2で割った余りによって分岐 ( % n を省略すると余りによる分岐は行いません)
+			/// 		+ >= 1.5 => ceil  // 正の値で、余りが 1.5 より大きい場合は ceil 関数を適用
+			/// 		-        => floor // 余りによる分岐は省略可能 (負の値は floor になる)
+			/// 	}
+			/// }
+			/// ```
+			macro_rules! r {
+
+				// 入力 -> それぞれの丸め方ごとに処理する
+				( match { $($any:tt)+ } ) => {
+					r!(@arm $($any)+ )
+				};
+
+				// 丸め方の1つ: 無条件に floor/ceil が決まる場合
+				(@arm
+					$( [$($parsed:tt)+] )*
+					$strategy:ident => $func:ident
+					$($not_yet:tt)*
+				) => { r!(@arm
+					$( [$($parsed)+] )*
+					[ $strategy => self.$func() ]
+					$($not_yet)*
+				) };
+				// 丸め方の1つ: 条件分岐がある場合
+				(@arm
+					$( [$($parsed:tt)+] )*
+					$strategy:ident => $( % $rem:tt )? { $($sub_arms:tt)+ }
+					$($not_yet:tt)*
+				) => { r!(@arm
+					$( [$($parsed)+] )*
+					[
+						$strategy => r!(@m
+							x(
+								$( rem($rem) )?
+								input( (
+									positive, negative,
+									$( (*self) % r!(@rem $rem) )?
+								) )
+							)
+							y() z($($sub_arms)+)
+						)
+					]
+					$($not_yet)*
+				) };
+				// 全ての丸め方のパースが終了したら呼び出す
+				(@arm $([ $arm:ident => $($content:tt)+ ])+ ) => {
+					match rule {
+						$( R::$arm => $($content)+ ),+
+					}
+				};
+
+				// 剰余の値にマッチ
+				(@rem 1) => { Self::val_p10() };
+				(@rem 2) => { Self::val_p20() };
+
+				// 以下は1つの丸め方に対して条件分岐がある場合を処理している
+				// x: パース済 y: パース中 z: 未パース
+
+				// 1つのアームを全てパースし切った後に、 match のパターンを生成
+				(@m
+					x( rem($rem:tt) input($($input:tt)+) $($x:tt)* )
+					y( sign($sp:tt,$sn:tt) op($($op:tt)+) threshold($t:ident) func($func:ident) )
+					$($z:tt)+
+				) => { r!(@m
+					x(
+						rem($rem) input($($input)+) $($x)*
+						pattern(($sp,$sn,r)) condition(r $($op)+ Self::$t()) func($func)
+					)
+					y() $($z)+
+				) };
+				(@m
+					x( rem($rem:tt) input($($input:tt)+) $($x:tt)* )
+					y( sign($sp:tt,$sn:tt) func($func:ident) )
+					$($z:tt)+
+				) => { r!(@m
+					x(
+						rem($rem) input($($input)+) $($x)*
+						pattern(($sp,$sn,_)) func($func)
+					)
+					y() $($z)+
+				) };
+				(@m
+					x( input($($input:tt)+) $($x:tt)* )
+					y( sign($sp:tt,$sn:tt) func($func:ident) )
+					$($z:tt)+
+				) => { r!(@m
+					x(
+						input($($input)+) $($x)*
+						pattern(($sp,$sn)) func($func)
+					)
+					y() $($z)+
+				) };
+
+				// 正負の符号にマッチ
+				(@m x($($x:tt)+) y() z(+ $($z:tt)+) ) => {
+					r!(@m x($($x)+) y( sign(true ,false) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y() z(- $($z:tt)+) ) => {
+					r!(@m x($($x)+) y( sign(false,true ) ) z($($z)+) )
+				};
+
+				// 条件式の不等号にマッチ
+				(@m x($($x:tt)+) y($($y:tt)+) z(>= $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(>=) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(<= $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(<=) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(> $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(>) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(< $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ op(<) ) z($($z)+) )
+				};
+
+				// 条件式の境界値にマッチ
+				(@m x($($x:tt)+) y($($y:tt)+) z(+0.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_p05) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(+1.0 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_p10) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(+1.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_p15) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(-0.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_m05) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(-1.0 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_m10) ) z($($z)+) )
+				};
+				(@m x($($x:tt)+) y($($y:tt)+) z(-1.5 $($z:tt)+) ) => {
+					r!(@m x($($x)+) y($($y)+ threshold(val_m15) ) z($($z)+) )
+				};
+
+				// アームの対応関数 (floor/ceil) にマッチ
+				(@m x($($x:tt)+) y($($y:tt)+) z(=> $func:ident $($z:tt)*) ) => {
+					r!(@m x($($x)+) y($($y)+ func($func) ) z($($z)*) )
+				};
+
+				// 全てのアームを処理した後に match 式を生成
+				(@m
+					x(
+						$( rem($rem:tt) )? input($($input:tt)+)
+						$( pattern($($p:tt)+) $( condition($($c:tt)+) )? func($func:ident) )+
+					)
+					y() z()
+				) => {
+					match $($input)+ {
+						$( $($p)+ $( if $($c)+ )? => self.$func() ,)+
+						_ => *self
+					}
+				};
+
 			}
+
+			// 丸め方に合わせて条件分岐
+			// 正でも負でもない値は NaN である
+			r! { match {
+				Down => floor
+				Up   => ceil
+				TowardZero => {
+					+ => floor
+					- => ceil
+				}
+				TowardInfinity => {
+					+ => ceil
+					- => floor
+				}
+				ToNearestOrDown => % 1 {
+					+ > +0.5 => ceil
+					+        => floor
+					- > -0.5 => ceil
+					-        => floor
+				}
+				ToNearestOrUp => % 1 {
+					+ < +0.5 => floor
+					+        => ceil
+					- < -0.5 => floor
+					-        => ceil
+				}
+				ToNearestOrTowardZero => % 1 {
+					+ > +0.5 => ceil
+					+        => floor
+					- < -0.5 => floor
+					-        => ceil
+				}
+				ToNearestOrTowardInfinity => % 1 {
+					+ < +0.5 => floor
+					+        => ceil
+					- > -0.5 => ceil
+					-        => floor
+				}
+				ToNearestOrEven => % 2 {
+					+ <= +0.5 => floor
+					+ <= +1.0 => ceil
+					+ <  +1.5 => floor
+					+         => ceil
+					- >= -0.5 => ceil
+					- >= -1.0 => floor
+					- >  -1.5 => ceil
+					-         => floor
+				}
+				ToNearestOrOdd => % 2 {
+					+ <  +0.5 => floor
+					+ <= +1.0 => ceil
+					+ <= +1.5 => floor
+					+         => ceil
+					- >  -0.5 => ceil
+					- >= -1.0 => floor
+					- >= -1.5 => ceil
+					-         => floor
+				}
+			} }
+
 		}
 
 		fn rounding_with_precision(&self,rule:R,precision:i32) -> Self {
-			( (*self) * 10_f64.powi(precision) ).rounding(rule) / 10_f64.powi(precision)
+			(
+				(*self) * Self::pow10(precision)
+			).rounding(rule)
+			/ Self::pow10(precision)
 		}
 
 	}
+
+	trait F: Float {
+
+		fn val_p05() -> Self;
+		fn val_p10() -> Self;
+		fn val_p15() -> Self;
+		fn val_p20() -> Self;
+		fn val_m05() -> Self;
+		fn val_m10() -> Self;
+		fn val_m15() -> Self;
+		fn val_m20() -> Self;
+
+		/// 10^p
+		fn pow10(p:i32) -> Self;
+
+	}
+	macro_rules! float_impl {
+		($fxx:ty) => {
+			impl F for $fxx {
+				fn val_p05() -> $fxx {  0.5 }
+				fn val_p10() -> $fxx {  1.0 }
+				fn val_p15() -> $fxx {  1.5 }
+				fn val_p20() -> $fxx {  2.0 }
+				fn val_m05() -> $fxx { -0.5 }
+				fn val_m10() -> $fxx { -1.0 }
+				fn val_m15() -> $fxx { -1.5 }
+				fn val_m20() -> $fxx { -2.0 }
+				fn pow10(p:i32) -> $fxx { 10.0.powi(p) }
+			}
+		};
+	}
+	float_impl!(f32);
+	float_impl!(f64);
 
 	#[cfg(test)]
 	#[test]
