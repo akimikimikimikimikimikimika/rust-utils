@@ -9,7 +9,7 @@ pub use num::*;
 
 #[cfg(feature="numerics")]
 /// プリミティブな関数を `x.sin()` ではなく `sin(x)` のような表記で使えるようにする
-mod primitive_funcs {
+pub mod primitive_functions {
 	use super::*;
 
 	pub fn exp<F:Float>(x:F) -> F {
@@ -49,8 +49,6 @@ mod primitive_funcs {
 	}
 
 }
-#[cfg(feature="numerics")]
-pub use primitive_funcs::*;
 
 
 
@@ -172,6 +170,7 @@ mod min_max {
 	}
 
 }
+pub use min_max::*;
 
 
 
@@ -240,6 +239,8 @@ mod float_min_max {
 	}
 
 }
+#[cfg(feature="numerics")]
+pub use float_min_max::*;
 
 
 
@@ -524,24 +525,15 @@ mod float_rounding {
 	/// 型ジェネリックに floor/ceil 分岐の境界値を与えるトレイト
 	trait F: Float {
 
-		#[inline]
 		fn val_p05() -> Self;
-		#[inline]
 		fn val_p10() -> Self;
-		#[inline]
 		fn val_p15() -> Self;
-		#[inline]
 		fn val_p20() -> Self;
-		#[inline]
 		fn val_m05() -> Self;
-		#[inline]
 		fn val_m10() -> Self;
-		#[inline]
 		fn val_m15() -> Self;
-		#[inline]
 		fn val_m20() -> Self;
 
-		#[inline]
 		/// 10^p
 		fn pow10(p:i32) -> Self;
 
@@ -550,14 +542,23 @@ mod float_rounding {
 	macro_rules! float_impl {
 		($fxx:ty) => {
 			impl F for $fxx {
+				#[inline]
 				fn val_p05() -> $fxx {  0.5 }
+				#[inline]
 				fn val_p10() -> $fxx {  1.0 }
+				#[inline]
 				fn val_p15() -> $fxx {  1.5 }
+				#[inline]
 				fn val_p20() -> $fxx {  2.0 }
+				#[inline]
 				fn val_m05() -> $fxx { -0.5 }
+				#[inline]
 				fn val_m10() -> $fxx { -1.0 }
+				#[inline]
 				fn val_m15() -> $fxx { -1.5 }
+				#[inline]
 				fn val_m20() -> $fxx { -2.0 }
+				#[inline]
 				fn pow10(p:i32) -> $fxx { 10.0.powi(p) }
 			}
 		};

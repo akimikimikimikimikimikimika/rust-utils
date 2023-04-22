@@ -140,31 +140,192 @@ mod tuple_to_array {
 	impl_t2a!(indices: 0 1 2 3 4 5 6 7 8 9 10 11 12 );
 
 }
+use tuple_to_array::*;
 
 
 
 /// 複数個のイテレータによる Zip を実装するモジュール
 mod multi_zip {
 	use super::*;
+	use std::iter::{
+		Iterator,
+		ExactSizeIterator,
+		DoubleEndedIterator,
+		FusedIterator
+	};
 
-	pub struct Zip3<A,B,C> {
-		a: A, b: B, c: C
+	/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
+	pub trait IntoZippedIterator where Self: Sized {
+		/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
+		/// * 最大で12個のイテレータまで対応
+		fn into_iter(self) -> ZipN<Self>;
 	}
 
-	impl<A,B,C> Iterator for Zip3<A,B,C> where A: Iterator, B: Iterator, C: Iterator {
-		type Item = (A::Item,B::Item,C::Item);
-		fn next(&mut self) -> Option<Self::Item> {
-			match (self.a.next(),self.b.next(),self.c.next()) {
-				(Some(a),Some(b),Some(c)) => Some((a,b,c)),
-				_ => None
+	mod zip_tuples {
+		use super::*;
+
+		/// 複数のイテレータを単一のイテレータに zip したイテレータです
+		pub struct ZipN<T> {
+			iter_tuples: T
+		}
+
+		/// イテレータの要素数ごとに `ZipN` を実装するマクロ
+		macro_rules! impl_zipped_iter {
+			( | $t0:ident $i0:tt $( $t:ident $i:tt )+ ) => {
+				impl_zipped_iter! { $t0 $i0 | $( $t $i )+ }
+			};
+			( $( $t:ident $i:tt )+ | $tn:ident $in:tt $( $others:tt )* ) => {
+
+				impl_zipped_iter! { $( $t $i )+ | }
+
+				impl_zipped_iter! { $( $t $i )+ $tn $in | $( $others )* }
+
+			};
+			( $( $t:ident $i:tt )+ | ) => {
+
+				impl<$($t),+> IntoZippedIterator for ($($t,)+)
+				where $( $t: Iterator ),+ {
+					fn into_iter(self) -> ZipN<Self> {
+						ZipN { iter_tuples: self }
+					}
+				}
+
+				impl<$($t),+> Iterator for ZipN<($($t,)+)>
+				where $( $t: Iterator ),+
+				{
+
+					type Item = ( $( $t::Item, )+ );
+
+					fn next(&mut self) -> Option<Self::Item> {
+						Some( ( $( self.iter_tuples.$i.next()?, )+ ) )
+					}
+
+					fn size_hint(&self) -> (usize, Option<usize>) {
+						let size_hint = ( $( self.iter_tuples.$i.size_hint(), )+ );
+						let l = [ $( size_hint.$i.0 ),+ ].minimum();
+						let u = [ $( size_hint.$i.1 ),+ ].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
+						(l,u)
+					}
+
+				}
+
+				impl<$($t),+> ExactSizeIterator for ZipN<($($t,)+)>
+				where $( $t: ExactSizeIterator ),+ {}
+
+				impl<$($t),+> DoubleEndedIterator for ZipN<($($t,)+)>
+				where $( $t: DoubleEndedIterator + ExactSizeIterator ),+ {
+					fn next_back(&mut self) -> Option<Self::Item> {
+						let size = ( $( self.iter_tuples.$i.len(), )+ );
+						let size_min = size.to_array().minimum();
+						$( for _ in size_min..size.$i {
+							self.iter_tuples.$i.next_back();
+						} )+
+						Some( ( $( self.iter_tuples.$i.next_back()?, )+ ) )
+					}
+				}
+
+				impl<$($t),+> FusedIterator for ZipN<($($t,)+)>
+				where $( $t: FusedIterator ),+ {}
+
+			};
+		}
+		impl_zipped_iter!( | T0 0 T1 1 T2 2 T3 3 T4 4 T5 5 T6 6 T7 7 T8 8 T9 9 T10 10 T11 11 );
+
+	}
+	pub use zip_tuples::*;
+
+	mod zip_array {
+		use super::*;
+
+		pub struct MultiZip<I> {
+			iters: Vec<I>
+		}
+
+		pub trait IntoMultiZip<I> {
+			fn multi_zip(self) -> MultiZip<I>;
+		}
+		impl<II,I,T> IntoMultiZip<I> for II
+		where II: IntoIterator<Item=I>, I: Iterator<Item=T>
+		{
+			fn multi_zip(self) -> MultiZip<I> {
+				MultiZip {
+					iters: self.into_iter().map(|i| i.into_iter() ).collect()
+				}
 			}
 		}
-		fn size_hint(&self) -> (usize, Option<usize>) {
-			let (a,b,c) = (self.a.size_hint(),self.b.size_hint(),self.c.size_hint());
-			let l = [a.0,b.0,c.0].minimum();
-			let u = [a.1,b.1,c.1].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
-			(l,u)
+
+		impl<I,T> Iterator for MultiZip<I>
+		where I: Iterator<Item=T>
+		{
+
+			type Item = Vec<T>;
+
+			fn next(&mut self) -> Option<Self::Item> {
+				if self.iters.is_empty() { return None; }
+				let mut is_some = true;
+				let values =
+				self.iters.iter_mut()
+				.filter_map(|i| {
+					let v = i.next();
+					if v.is_none() { is_some = false; }
+					v
+				} )
+				.collect::<Self::Item>();
+				is_some.then_some(values)
+			}
+
+			fn size_hint(&self) -> (usize, Option<usize>) {
+				if self.iters.is_empty() { return (0,Some(0)); }
+				self.iters.iter()
+				.map( |i| i.size_hint() )
+				.reduce(|(l1,u1),(l2,u2)| (
+					l1.min(l2),
+					match (u1,u2) {
+						(Some(v1),Some(v2)) => Some(v1.min(v2)),
+						(Some(v),None)|(None,Some(v)) => Some(v),
+						(None,None) => None
+					}
+				) )
+				.unwrap_or((0,Some(0)))
+			}
+
 		}
+
+		impl<I,T> ExactSizeIterator for MultiZip<I>
+		where I: ExactSizeIterator<Item=T> {}
+
+		impl<I,T> DoubleEndedIterator for MultiZip<I>
+		where I: DoubleEndedIterator<Item=T> + ExactSizeIterator {
+			fn next_back(&mut self) -> Option<Self::Item> {
+				let size =
+				self.iters.iter()
+				.map( |i| i.len() )
+				.collect::<Vec<_>>();
+				let size_min = size.clone().minimum();
+				( self.iters.iter_mut(), size.into_iter() )
+				.into_iter()
+				.for_each(|(i,s)| {
+					for _ in size_min..s { i.next_back(); }
+				});
+
+				let mut is_some = true;
+				let values =
+				self.iters.iter_mut()
+				.filter_map(|i| {
+					let v = i.next_back();
+					if v.is_none() { is_some = false; }
+					v
+				})
+				.collect::<Self::Item>();
+				is_some.then_some(values)
+			}
+		}
+
+		impl<I,T> FusedIterator for MultiZip<I>
+		where I: FusedIterator<Item=T> {}
+
 	}
+	pub use zip_array::*;
 
 }
+pub use multi_zip::*;
