@@ -159,6 +159,9 @@ mod multi_zip {
 		/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
 		/// * 最大で12個のイテレータまで対応
 		fn into_iter(self) -> ZipN<Self>;
+		/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
+		/// * 最大で12個のイテレータまで対応
+		fn zip(self) -> ZipN<Self> { self.into_iter() }
 	}
 
 	mod zip_tuples {
@@ -329,3 +332,8 @@ mod multi_zip {
 
 }
 pub use multi_zip::*;
+
+
+
+/// カーテジアン積のイテレータのモジュール
+mod multi_product {}

@@ -14,7 +14,7 @@ TODO
 		- `enum` バリアントの named, unnamed で対応させるか
 	- [ ] デバッグ出力時にブロック単位で改行されるようにする
 - [ ] トークン系のマクロで、トークンをビルド時に標準エラー出力に出力されるようにしたものを用意
-- [ ] `Zip3` が現在用意されているが、これを複数個の Zip にも対応させる
+- [x] `Zip3` が現在用意されているが、これを複数個の Zip にも対応させる
 	- 同時に `unzip` も用意できればいいかな
 - `par_for_each!` を `ParallelIterator` の多数 Zip に対応する
 	- `(IndexedParallelIterator,..).into_par_iter()` により生成できる `MultiZip` 型
