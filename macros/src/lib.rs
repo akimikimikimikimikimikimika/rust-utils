@@ -7,9 +7,6 @@ mod tokens;
 mod for_each;
 use for_each::*;
 
-mod smart_for_each;
-use smart_for_each::*;
-
 mod compose_struct;
 use compose_struct::*;
 
@@ -28,7 +25,5 @@ for_each_interface! {
 	par_bridge_for_each ParallelBridge
 	for_each            Serial
 }
-
-smart_for_each_interface! {}
 
 compose_struct_interface! {}
