@@ -372,8 +372,8 @@ mod rounding {
 				if b && e==0.0 { b = c.is_sign_negative()==e.is_sign_negative(); }
 				if !b {
 					failed.push(format!(
-						"({:+}).rounding(R::{:?}) = {:+} != {:+}",
-						i,r,c,e
+						"({:+}).rounding(Strategy::{:?}) = {:+} != {:+}",
+						i,s,c,e
 					));
 				}
 			}
