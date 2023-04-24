@@ -1,11 +1,6 @@
 mod numerics;
 pub use numerics::*;
 
-#[cfg(feature="nd")]
-mod nd;
-#[cfg(feature="nd")]
-pub use nd::*;
-
 mod logging;
 pub use logging::*;
 
