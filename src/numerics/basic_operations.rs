@@ -104,7 +104,7 @@ mod float_min_max {
 		pub trait ReduceFn<T> = Fn(T,T) -> T;
 	}
 
-	pub trait MinMax<T> {
+	pub trait FloatMinMax<T> {
 		/// 複数の浮動小数の中から最小の値を与えます。値に NaN が含まれていれば無視されます。全ての値が NaN の場合や値が含まれていない場合は NaN を返します。
 		fn minimum(self) -> T;
 		/// 複数の浮動小数の中から最大の値を与えます。値に NaN が含まれていれば無視されます。全ての値が NaN の場合や値が含まれていない場合は NaN を返します。
@@ -115,17 +115,31 @@ mod float_min_max {
 		fn maximum_propagate(self) -> T;
 	}
 
-	impl<T:Float,I:Iter<T>> MinMax<T> for I {
-		fn minimum(self) -> T {
+	impl<I:Iter<f64>> FloatMinMax<f64> for I {
+		fn minimum(self) -> f64 {
 			reduce_ignore_nan(self,min)
 		}
-		fn maximum(self) -> T {
+		fn maximum(self) -> f64 {
 			reduce_ignore_nan(self,max)
 		}
-		fn minimum_propagate(self) -> T {
+		fn minimum_propagate(self) -> f64 {
 			reduce_propagate_nan(self,min)
 		}
-		fn maximum_propagate(self) -> T {
+		fn maximum_propagate(self) -> f64 {
+			reduce_propagate_nan(self,max)
+		}
+	}
+	impl<I:Iter<f32>> FloatMinMax<f32> for I {
+		fn minimum(self) -> f32 {
+			reduce_ignore_nan(self,min)
+		}
+		fn maximum(self) -> f32 {
+			reduce_ignore_nan(self,max)
+		}
+		fn minimum_propagate(self) -> f32 {
+			reduce_propagate_nan(self,min)
+		}
+		fn maximum_propagate(self) -> f32 {
 			reduce_propagate_nan(self,max)
 		}
 	}

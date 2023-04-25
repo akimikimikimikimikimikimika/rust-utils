@@ -12,17 +12,15 @@ num = { version = "*", optional = true }
 log = { version = "*", optional = true }
 time = { version = "*", optional = true, features = ["formatting", "local-offset", "std"] }
 once_cell = { version = "*", optional = true }
-ndarray = { version = "*",features = ["rayon"], optional = true }
 macros = { path = "macros" }
 
 [lib]
 crate-type = ["rlib"]
 
 [features]
-default = ["numerics","nd","logging","time_description"]
+default = ["numerics","logging","time_description"]
 
 numerics = ["num"]
-nd = ["ndarray"]
 logging = ["log"]
 time_description = ["time", "once_cell"]
 time_older = ["time_description"]
