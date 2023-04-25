@@ -61,7 +61,7 @@ mod sqrt_cbrt_extension {
 	use super::*;
 
 	/// 複素数の `sqrt`, `cbrt` を拡張するトレイト
-	pub trait SqrtCbrtExtension where Self: Sized {
+	pub trait SqrtCbrtExtension : Sized {
 		/// 全ての2乗根を返す
 		fn sqrt_all(&self) -> [Self;2];
 		/// 全ての3乗根を返す
@@ -90,7 +90,7 @@ pub use sqrt_cbrt_extension::*;
 mod evaluate_polynomials {
 	use super::*;
 
-	pub trait FloatOrComplex where Self: Sized {
+	pub trait FloatOrComplex : Sized {
 		fn eval_poly<'a>(self,coeffs:&'a [Self]) -> Self;
 	}
 
