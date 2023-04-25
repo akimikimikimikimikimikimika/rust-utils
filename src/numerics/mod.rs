@@ -9,9 +9,12 @@ mod basic_operations;
 pub use basic_operations::*;
 
 #[cfg(feature="numerics")]
-mod primitive_functions;
+pub mod primitive_functions;
+
 #[cfg(feature="numerics")]
-pub use primitive_functions::*;
+mod primitive_function_extensions;
+#[cfg(feature="numerics")]
+pub use primitive_function_extensions::*;
 
 #[cfg(feature="numerics")]
 mod float;
