@@ -88,9 +88,11 @@ macro_rules! compose_struct_interface { ()=>{
 		//! 	/// `None` を許容する実数型
 		//! 	pub type NullableFloat = Option<f64>;
 		//! 	/// 任意の文字列
-		//! 	pub trait AnyStr = std::convert::Into<String> + std::fmt::Display;
+		//! 	pub trait AnyStr = std::convert::AsRef<str> + std::fmt::Display;
 		//! 	/// クローン可能な `u8` 型イテレータ
 		//! 	trait IntIter = Iterator<Item=u8> + Clone;
+		//! 	/// `Iterator` に変換可能な型
+		//! 	trait II<T> = IntoIterator<Item=T> where T: ?Sized;
 		//! }
 		//! ```
 		//!
@@ -318,6 +320,8 @@ mod typedef {
 		pub attributes: Vec<Attr>,
 		/// `pub` などの可視性 (エイリアスにアクセス可能な範囲) の情報
 		pub visibility: TS,
+		/// `where` によるジェネリクスの拘束条件
+		pub where_condition: TS,
 		/// 元のソースコード
 		pub src: String
 	}
@@ -630,13 +634,20 @@ mod parser {
 					(PP::GotName|PP::GotGenericsEnd,"=",_,Type::TypeAlias|Type::TraitAlias) => {
 						phase = PP::GotEqual;
 					},
-					(PP::GotArtifact,";",_,Type::TypeAlias|Type::TraitAlias) => {
+					(PP::GotArtifact|PP::GotWhereItem,";",_,Type::TypeAlias|Type::TraitAlias) => {
 						phase = PP::GotSemicolon;
 						break;
+					},
+					(PP::GotArtifact,"where",_,Type::TraitAlias) => {
+						phase = PP::GotWhere;
 					},
 					(PP::GotEqual|PP::GotArtifact,_,t,Type::TypeAlias|Type::TraitAlias) => {
 						body = quote!( #body #t );
 						phase = PP::GotArtifact;
+					},
+					(PP::GotWhere|PP::GotWhereItem,_,t,Type::TraitAlias) => {
+						wh = quote!( #wh #t );
+						phase = PP::GotWhereItem;
 					},
 					_ => error(
 						format!("予期しないトークン {} が含まれています",s),
@@ -720,7 +731,7 @@ mod parser {
 		/// トレイトエイリアスをパースする
 		fn parse_trait_alias(pr:ParsingResult) -> TraitAlias {
 			let ParsingResult {
-				name, generics, body, attr, vis, src, ..
+				name, generics, body, attr, vis, wh, src, ..
 			} = pr;
 
 			TraitAlias {
@@ -728,6 +739,7 @@ mod parser {
 				artifact: body,
 				attributes: attr,
 				visibility: vis,
+				where_condition: wh,
 				src
 			}
 		}
@@ -2436,6 +2448,7 @@ mod compose {
 				ref artifact,
 				ref attributes,
 				ref visibility,
+				ref where_condition,
 				..
 			} = self;
 			let attr = attributes.compose(global);
@@ -2450,9 +2463,16 @@ mod compose {
 					quote!(<#t,#generics>)
 				)
 			};
+			let (wt,wi) = match where_condition.is_empty() {
+				true => (TS::new(),TS::new()),
+				false => (
+					quote!( where #where_condition ),
+					quote!( , #where_condition )
+				)
+			};
 			let this = quote!(
-				#attr #visibility trait #name #gt: #artifact {}
-				impl #gi #name #gt for #t where #t: #artifact {}
+				#attr #visibility trait #name #gt: #artifact #wt {}
+				impl #gi #name #gt for #t where #t: #artifact #wi {}
 			);
 			*global = quote!( #global #this );
 			TS::new()
