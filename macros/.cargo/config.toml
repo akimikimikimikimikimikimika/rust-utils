@@ -1,0 +1,3 @@
+# サブクレート内に生成物を作るためには target-dir を上書きする必要がある
+[build]
+target-dir = "target.nosync"
