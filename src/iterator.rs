@@ -157,9 +157,9 @@ mod multi_zip {
 	/// イテレータのタプルを zip する関数を含むモジュール
 	mod zip_tuples {
 		use super::*;
-	
+
 		/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
-		pub trait IntoZippedIterator : Sized {
+		pub trait IntoZippedIterator: Sized {
 			/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
 			/// * 最大で12個のイテレータまで対応
 			fn into_iter(self) -> ZipN<Self>;

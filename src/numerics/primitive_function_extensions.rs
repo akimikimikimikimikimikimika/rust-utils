@@ -9,17 +9,42 @@ mod hypot_extension {
 	}
 
 	/// `hypot` 関数を多数の要素でも使えるようにするトレイト
-	pub trait HypotFn<T> {
+	pub trait HypotForArray<T> {
 		/// 多数個の要素に対して平方和のルートを計算する
 		fn hypot(self) -> T;
 	}
-	impl<T:Float, I:Iter<T>> HypotFn<T> for I {
+	impl<T:Float, I:Iter<T>> HypotForArray<T> for I {
 		fn hypot(self) -> T {
 			self.into_iter()
 			.reduce( |a,v| a.hypot(v) )
 			.unwrap_or(T::zero())
 		}
 	}
+
+	/// `hypot` 関数を多数の要素でも使えるようにするトレイト
+	pub trait HypotForTuple<T> {
+		/// 多数個の要素に対して平方和のルートを計算する
+		fn hypot(self) -> T;
+	}
+
+	macro_rules! impl_hft {
+		(indices: $($i:tt)+ ) => {
+			impl_hft! {@each T | $($i),+ }
+		};
+		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
+			impl_hft! {@each $t $($tx $x),* | }
+			impl_hft! {@each $t $($tx $x,)* $t $y0 | $($y),* }
+		};
+		(@each $t:ident $($tx:ident $x:tt),* | ) => {
+			impl<$t:Float> HypotForTuple<$t> for ($t,$($tx),*) {
+				#[inline]
+				fn hypot(self) -> $t {
+					self.0 $( .hypot(self.$x) )*
+				}
+			}
+		};
+	}
+	impl_hft! {indices: 1 2 3 4 5 }
 
 }
 pub use hypot_extension::*;
@@ -34,9 +59,9 @@ mod mul_add_extension {
 	/// `mul_add` を複数個の要素に拡張するトレイト
 	pub trait MulAddExtension<T> {
 		/// ## `mul_add`
-		/// 複数個の値のペアの積をとり、それらの和をとる。 `mul_add` を使ってより正確な値を得ることができる。
-		/// * `[(a1,b1),(a2,b2),...].mul_add()` : `a1*b1+a2*b2+...` を得る
-		/// * `([(a1,b1),(a2,b2),...],c).mul_add()` : `a1*b1+a2*b2+...+c` を得る
+		/// * 複数個の値のペアの積をとり、それらの和をとる。
+		/// * `mul_add` を使ってより正確な値を得ることができる。
+		/// * `([(a1,b1),(a2,b2),...],c).mul_add()` という表記により `a1*b1+a2*b2+...+c` を得る。
 		fn mul_add(self) -> T;
 	}
 	impl<I,T> MulAddExtension<T> for (I,T)
@@ -59,25 +84,60 @@ pub use mul_add_extension::*;
 /// `sqrt`, `cbrt` の拡張
 mod sqrt_cbrt_extension {
 	use super::*;
+	type C<T> = Complex<T>;
 
 	/// 複素数の `sqrt`, `cbrt` を拡張するトレイト
-	pub trait SqrtCbrtExtension : Sized {
+	pub trait SqrtCbrtExtension<T> {
 		/// 全ての2乗根を返す
-		fn sqrt_all(&self) -> [Self;2];
+		fn sqrt_all(&self) -> [C<T>;2];
 		/// 全ての3乗根を返す
-		fn cbrt_all(&self) -> [Self;3];
+		fn cbrt_all(&self) -> [C<T>;3];
 	}
 
-	impl<F> SqrtCbrtExtension for Complex<F> where F: Float, f64: Into<F> {
-		fn sqrt_all(&self) -> [Self;2] {
+	impl<F> SqrtCbrtExtension<F> for C<F>
+	where F: Float, f32: Into<F>
+	{
+		fn sqrt_all(&self) -> [C<F>;2] {
 			let p = self.sqrt();
 			[p,-p]
 		}
-		fn cbrt_all(&self) -> [Self;3] {
+		fn cbrt_all(&self) -> [C<F>;3] {
 			let p = self.cbrt();
-			let t1 = Complex::from_polar(F::one(), (120.0).into().to_radians());
-			let t2 = Complex::from_polar(F::one(), (240.0).into().to_radians());
+			let t1 = Complex::from_polar(
+				F::one(),
+				120.0.into().to_radians()
+			);
+			let t2 = Complex::from_polar(
+				F::one(),
+				240.0.into().to_radians()
+			);
 			[p,p*t1,p*t2]
+		}
+	}
+
+	impl SqrtCbrtExtension<f32> for f32 {
+		fn sqrt_all(&self) -> [C<f32>;2] {
+			<C<f32>>::sqrt_all(
+				&C { re:*self, im:0.0 }
+			)
+		}
+		fn cbrt_all(&self) -> [C<f32>;3] {
+			<C<f32>>::cbrt_all(
+				&C { re:*self, im:0.0 }
+			)
+		}
+	}
+
+	impl SqrtCbrtExtension<f64> for f64 {
+		fn sqrt_all(&self) -> [C<f64>;2] {
+			<C<f64>>::sqrt_all(
+				&C { re:*self, im:0.0 }
+			)
+		}
+		fn cbrt_all(&self) -> [C<f64>;3] {
+			<C<f64>>::cbrt_all(
+				&C { re:*self, im:0.0 }
+			)
 		}
 	}
 
@@ -90,49 +150,6 @@ pub use sqrt_cbrt_extension::*;
 mod evaluate_polynomials {
 	use super::*;
 	type C<T> = Complex<T>;
-
-	pub trait FloatOrComplex : Sized {
-		fn eval_poly<'a>(self,coeffs:&'a [Self]) -> Self;
-	}
-
-	impl<F> FloatOrComplex for C<F> where F: Float, f64: Into<F> {
-		// 複素数に対する Goertzel の方法による実装
-		fn eval_poly<'a>(self,coeffs:&'a [Self]) -> Self {
-			use primitive_functions::mul_add;
-
-			// 入力した変数 z = x+iy に対して p = 2x, q = - (x²+y²) を計算する
-			let Self { re: x,im: y } = self;
-			let p = x * 2.0.into();
-			let q = - mul_add( x, x, y*y );
-
-			// 作業変数 a, b を用意する。初期値は a が最高次, b がその次の次数の係数である。0次の場合 (coeffs の要素数が1の場合) と、係数がない場合 (coeffs の要素数が0の場合) は早期にリターンする。
-			let mut iter = coeffs.iter().rev();
-			let mut a = match iter.next() {
-				Some(c) => *c,
-				None => { return Self::zero(); }
-			};
-			let mut b = match iter.next() {
-				Some(c) => *c,
-				None => { return a; }
-			};
-
-			// 残りの次数について漸化的に a = pa+b, b = qa + c を変化させる
-			for c in iter {
-				(a.re,a.im,b.re,b.im) = (
-					mul_add(p,a.re,b.re),
-					mul_add(p,a.im,b.im),
-					mul_add(q,a.re,c.re),
-					mul_add(q,a.im,c.im)
-				);
-			}
-
-			// 最後に za + b を計算してから返す
-			Self {
-				re: ([(x,a.re),(-y,a.im)],b.re).mul_add(),
-				im: ([(y,a.re),( x,a.im)],b.im).mul_add()
-			}
-		}
-	}
 
 	// 型に合わせた実装部
 
