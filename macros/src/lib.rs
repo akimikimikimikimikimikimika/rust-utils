@@ -1,5 +1,3 @@
-#![allow(confusable_idents)]
-
 use proc_macro::TokenStream;
 
 mod tokens;

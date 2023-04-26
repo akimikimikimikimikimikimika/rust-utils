@@ -154,18 +154,19 @@ mod multi_zip {
 		FusedIterator
 	};
 
-	/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
-	pub trait IntoZippedIterator where Self: Sized {
-		/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-		/// * 最大で12個のイテレータまで対応
-		fn into_iter(self) -> ZipN<Self>;
-		/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-		/// * 最大で12個のイテレータまで対応
-		fn zip(self) -> ZipN<Self> { self.into_iter() }
-	}
-
+	/// イテレータのタプルを zip する関数を含むモジュール
 	mod zip_tuples {
 		use super::*;
+
+		/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
+		pub trait IntoZippedIterator: Sized {
+			/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
+			/// * 最大で12個のイテレータまで対応
+			fn into_iter(self) -> ZipN<Self>;
+			/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
+			/// * 最大で12個のイテレータまで対応
+			fn zip(self) -> ZipN<Self> { self.into_iter() }
+		}
 
 		/// 複数のイテレータを単一のイテレータに zip したイテレータです
 		pub struct ZipN<T> {
@@ -237,6 +238,7 @@ mod multi_zip {
 	}
 	pub use zip_tuples::*;
 
+	/// イテレータの配列を zip する関数を含むモジュール
 	mod zip_array {
 		use super::*;
 
