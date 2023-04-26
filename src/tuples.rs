@@ -19,7 +19,7 @@ mod options {
 		};
 		( ($($ic:tt:$tc:ident)+) ) => {};
 	}
-	zip_many!{ 0:T0 1:T1 2:T2 3:T3 4:T4 5:T5 6:T6 7:T7 8:T8 9:T9 10:T10 }
+	zip_many!{ 0:T0 1:T1 2:T2 3:T3 4:T4 5:T5 6:T6 7:T7 8:T8 9:T9 10:T10 11:T11 }
 
 	impl<T,const N:usize> Zip<[T;N]> for [Option<T>;N] {
 		fn zip_options(self) -> Option<[T;N]> {
@@ -73,8 +73,9 @@ mod array {
 	use super::*;
 	use std::fmt::Debug;
 
+	/// インデクス付き配列を生成するトレイト
 	pub trait WithIndex<T,const N:usize> {
-		/// インデクス付きの配列を生成します
+		/// 固定長配列にインデクスを付けたものを返します
 		fn with_index(self) -> [(usize,T);N];
 	}
 

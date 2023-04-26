@@ -95,7 +95,7 @@ pub use min_max::*;
 
 
 #[cfg(feature="numerics")]
-/// `Float` に従う型の最大/最小を多数の要素でも使えるようにする。同時に NaN の伝播則をカスタマイズできるようにする。
+/// `Float` に従う型の最大/最小を多数の要素でも使えるようにする。 NaN の伝播の仕方に合わせて複数のメソッドを用意する。
 mod float_min_max {
 	use super::*;
 
