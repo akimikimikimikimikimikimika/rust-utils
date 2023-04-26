@@ -2,7 +2,7 @@ TODO
 ---
 
 - `numerics`
-	- [ ] `numerics` を分割して、ディレクトリ構造にする
+	- [x] `numerics` を分割して、ディレクトリ構造にする
 	- [ ] 特殊関数に関する実装を追加する
 		- ガンマ、ゼータとか
 	- [ ] 任意精度の実数や整数の型を作るか、既存のライブラリの型をインテグレートする
@@ -32,7 +32,13 @@ TODO
 	- [ここ](https://docs.rs/itertools/0.10.5/itertools/trait.Itertools.html#method.cartesian_product) にある操作の幾つかに対応させたい
 - [x] 同じ型のタプル `(T,T,...)` を配列 `[T;N]` に変換するトレイト
 	- どれだけの個数を用意すれば良いだろうか
-- [ ] `smart_for_each!` の移動
+- `power` 関数
+	- [ ] `power(f64,f32)` や `power(Complex<f64>,f32)`, `power(Complex<f64>,Complex<f32>)` に対応させる
+	- [ ] `NonZero**` への対応
+		- 2重3重の `from` を使って
+	- [ ] `try_from` になっている型への対応
+		- `Option<T>` 型として返す
+- [x] `smart_for_each!` の移動
 - [ ] アーカイブ形式の一般化
 	- アーカイブからアイテムを削除する機能とか
 - [ ] 多言語対応

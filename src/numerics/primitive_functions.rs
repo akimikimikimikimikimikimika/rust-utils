@@ -38,22 +38,22 @@ macro_rules! func_def {
 }
 
 func_def! {
-	sqrt_impl()       => sqrt(x)
-	cbrt_impl()       => cbrt(x)
-	exp_impl()        => exp(x)
-	ln_impl()         => ln(x)
-	sin_impl()        => sin(x)
-	cos_impl()        => cos(x)
-	tan_impl()        => tan(x)
-	sinh_impl()       => sinh(x)
-	cosh_impl()       => cosh(x)
-	tanh_impl()       => tanh(x)
-	asin_impl()       => asin(x)
-	acos_impl()       => acos(x)
-	atan_impl()       => atan(x)
-	asinh_impl()      => asinh(x)
-	acosh_impl()      => acosh(x)
-	atanh_impl()      => atanh(x)
+	sqrt_impl()  => sqrt(x)
+	cbrt_impl()  => cbrt(x)
+	exp_impl()   => exp(x)
+	ln_impl()    => ln(x)
+	sin_impl()   => sin(x)
+	cos_impl()   => cos(x)
+	tan_impl()   => tan(x)
+	sinh_impl()  => sinh(x)
+	cosh_impl()  => cosh(x)
+	tanh_impl()  => tanh(x)
+	asin_impl()  => asin(x)
+	acos_impl()  => acos(x)
+	atan_impl()  => atan(x)
+	asinh_impl() => asinh(x)
+	acosh_impl() => acosh(x)
+	atanh_impl() => atanh(x)
 }
 
 #[inline]
@@ -97,7 +97,7 @@ mod power {
 	type R<T> = num::rational::Ratio<T>;
 	type C<T> = Complex<T>;
 
-	/// 関数 `power` の引数として受け入れ可能な値の型を定義しています
+	/// 関数 `power` の引数として受け入れ可能な値の型を定義するトレイト
 	pub trait SupportsPowerOf<P,R> {
 		fn power_impl(self,pow:P) -> R;
 	}
@@ -247,21 +247,22 @@ mod power {
 	}
 
 	#[inline]
-	/// ## `power`
-	/// 冪乗を計算します
-	/// ### 対応する型
-	/// ```rust
-	/// power(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|BigInt|BigUint,u8|u16|u32|usize)
-	/// power(f32|f64,i8|i16|i32|u8|u16|usize)
-	/// power(f32,f32) power(f64,f64)
-	/// power(Complex<f32>,f32|Complex<f32>)
-	/// power(Complex<f64>,f64|Complex<f64>)
-	/// power(Complex<f32|f64>,usize)
-	/// power(Complex<T>,u8|u16|u32)
-	/// power(Complex<T>,i8|i16|i32|u8|u16)
-	/// ```
 	pub fn power<B,P,R>(base:B,pow:P) -> R
 	where B: SupportsPowerOf<P,R> {
+		//! ## `power`
+		//! 冪乗を計算します。 `.pow()`, `.powf()`, `.powi()` など多様な冪乗の関数を一元化し、型に合わせた関数を呼び出すように実装されています。
+		//! ### 対応する型
+		//! ```rust
+		//! power(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|BigInt|BigUint,u8|u16|u32|usize)
+		//! power(f32|f64,i8|i16|i32|u8|u16|usize)
+		//! power(f32,f32) power(f64,f64)
+		//! power(Complex<f32>,f32|Complex<f32>)
+		//! power(Complex<f64>,f64|Complex<f64>)
+		//! power(Complex<f32|f64>,usize)
+		//! power(Complex<T>,u8|u16|u32)
+		//! power(Complex<T>,i8|i16|i32|u8|u16)
+		//! ```
+
 		base.power_impl(pow)
 	}
 

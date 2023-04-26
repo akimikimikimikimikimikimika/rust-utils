@@ -100,7 +100,7 @@ mod rounding {
 		}
 	}
 
-	impl<T> Rounding<T> where T: Float, f64: Into<T> {
+	impl<T> Rounding<T> where T: Float, f32: Into<T> {
 		pub fn doit(&self) -> T {
 
 			if self.value.is_nan() { return self.value; }

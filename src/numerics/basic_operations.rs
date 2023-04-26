@@ -62,11 +62,6 @@ pub use operate_and_assign::*;
 
 /// `Ord` に従う型の最大/最小を多数の要素に対して実行する
 mod min_max {
-	use super::*;
-
-	compose_struct! {
-		pub trait Iter<T> = IntoIterator<Item=T>;
-	}
 
 	/// 複数の要素の中から最大/最小を決定する
 	pub trait MinMax<T> {
@@ -76,7 +71,7 @@ mod min_max {
 		fn maximum(self) -> T;
 	}
 
-	impl<T:Ord,I:Iter<T>> MinMax<T> for I {
+	impl<T,I> MinMax<T> for I where I: IntoIterator<Item=T>, T: Ord {
 		fn minimum(self) -> T {
 			self.into_iter()
 			.reduce( |a,v| a.min(v) )
@@ -95,13 +90,13 @@ pub use min_max::*;
 
 
 #[cfg(feature="numerics")]
-/// `Float` に従う型の最大/最小を多数の要素でも使えるようにする。同時に NaN の伝播則をカスタマイズできるようにする。
+/// `Float` に従う型の最大/最小を多数の要素でも使えるようにする。 NaN の伝播の仕方に合わせて複数のメソッドを用意する。
 mod float_min_max {
 	use super::*;
 
 	compose_struct! {
-		pub trait Iter<T> = IntoIterator<Item=T>;
-		pub trait ReduceFn<T> = Fn(T,T) -> T;
+		trait Iter<T> = IntoIterator<Item=T> where T: ?Sized;
+		trait ReduceFn<T> = Fn(T,T) -> T;
 	}
 
 	pub trait FloatMinMax<T> {
@@ -115,31 +110,18 @@ mod float_min_max {
 		fn maximum_propagate(self) -> T;
 	}
 
-	impl<I:Iter<f64>> FloatMinMax<f64> for I {
-		fn minimum(self) -> f64 {
+	// ここで IntoIterator<Item=T> の代わりに Iter<T> を使うことはできない。 MinMax トレイトと衝突してしまう。
+	impl<T,I> FloatMinMax<T> for I where I: IntoIterator<Item=T>, T: Float {
+		fn minimum(self) -> T {
 			reduce_ignore_nan(self,min)
 		}
-		fn maximum(self) -> f64 {
+		fn maximum(self) -> T {
 			reduce_ignore_nan(self,max)
 		}
-		fn minimum_propagate(self) -> f64 {
+		fn minimum_propagate(self) -> T {
 			reduce_propagate_nan(self,min)
 		}
-		fn maximum_propagate(self) -> f64 {
-			reduce_propagate_nan(self,max)
-		}
-	}
-	impl<I:Iter<f32>> FloatMinMax<f32> for I {
-		fn minimum(self) -> f32 {
-			reduce_ignore_nan(self,min)
-		}
-		fn maximum(self) -> f32 {
-			reduce_ignore_nan(self,max)
-		}
-		fn minimum_propagate(self) -> f32 {
-			reduce_propagate_nan(self,min)
-		}
-		fn maximum_propagate(self) -> f32 {
+		fn maximum_propagate(self) -> T {
 			reduce_propagate_nan(self,max)
 		}
 	}
