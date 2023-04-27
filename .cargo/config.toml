@@ -1,18 +1,24 @@
 [alias]
-debug = "build --profile full-debug"
-normal = "build --profile default"
-optimized = "build --profile optimized"
-exec = "run --profile default"
-syntax = "check --profile default"
+# `profile.rustflags` は未だ安定版でないので、 `rustflags` を使う代わりにコンパイルコマンドを `rustc` にする
+build-debug = ["rustc","--profile","debugging","--","-C","link-dead-code=true"]
+build-asm = ["rustc","--profile","default","--","--emit=asm"]
+build-ir = ["rustc","--profile","default","--","--emit=llvm-ir"]
+build-bc = ["rustc","--profile","default","--","--emit=llvm-bc"]
+build-mir = ["rustc","--profile","default","--","--emit=mir"]
+build-default = ["rustc","--profile","default"]
+build-optimized = ["rustc","--profile","optimized"]
+exec = ["run","--profile","default"]
+syntax = ["check","--profile","default"]
+macro-expand = ["expand","--profile","default"]
+macro-backtrace = ["rustc","--profile","default","--","-Z","macro-backtrace"]
 
 [build]
 target-dir = "target.nosync"
 rustflags = [
-	"--emit","link",
 	"-C","relocation-model=pic"
 ]
 
-[profile.full-debug]
+[profile.debugging]
 inherits = "dev"
 opt-level = 0
 debug = 2
@@ -34,10 +40,11 @@ incremental = true
 
 [profile.optimized]
 inherits = "release"
-opt-level = 2
+opt-level = 3
 debug = 0
 strip = "symbols"
 debug-assertions = false
 overflow-checks = false
 panic = "abort"
 incremental = false
+codegen-units = 1

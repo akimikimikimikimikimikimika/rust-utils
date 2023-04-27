@@ -38,6 +38,16 @@ TODO
 		- 2重3重の `from` を使って
 	- [ ] `try_from` になっている型への対応
 		- `Option<T>` 型として返す
+- [ ] 積の形にマクロ展開する手続き型マクロ `macro_product!` を実装
+```rust
+macro_product! {
+	func = (sin) (cos) (tan)
+	types = (f64) (f32) (C<f64>) (C<f32>);
+	println!("function {} for {}",func,types);
+}
+// func, types に括弧内の値が代入されて println!(...) が 12 個生成される。
+// 括弧の形式は [] () {} の任意にする
+```
 - [x] `smart_for_each!` の移動
 - [ ] アーカイブ形式の一般化
 	- アーカイブからアイテムを削除する機能とか
