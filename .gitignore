@@ -11,3 +11,4 @@ Cargo.lock
 
 # その他に ignore するファイル
 .DS_Store
+cargo_expand.rs
