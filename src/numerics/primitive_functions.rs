@@ -1,69 +1,141 @@
 use super::*;
+type C<T> = Complex<T>;
+type R<T> = num::rational::Ratio<T>;
 
-/// `Float`, `Complex` の双方に対してプリミティブな関数をまとめて定義するマクロ
-macro_rules! func_def {
-	( $(
-		$func_impl:ident($($extra_args:ident),*)
-		=> $func_as:ident($arg0:ident $(,$args:ident)*)
-	)+ ) => {
-		mod func_generic {
+/// 指数関数や対数関数を定義するモジュール
+mod exp_log {
+	use super::*;
+
+	/// `Float` と `Complex` に対して `log` に対応するトレイト
+	pub trait Logarithm<B>: Sized {
+		fn log_impl(self,base:B) -> Self;
+	}
+	/// `Float` と `Complex` に対して `ln` に対応するトレイト
+	pub trait NaturalLogarithm: Sized {
+		fn ln_impl(self) -> Self;
+	}
+	/// `Float` と `Complex` に対して `exp` に対応するトレイト
+	pub trait Exponential: Sized {
+		fn exp_impl(self) -> Self;
+	}
+
+	macro_rules! log_impl {
+		( $t:ty, $b:ty ) => {
+			impl Logarithm<$b> for $t {
+				#[inline]
+				fn log_impl(self,base:$b) -> $t { self.log(base) }
+			}
+			impl NaturalLogarithm for $t {
+				#[inline]
+				fn ln_impl(self) -> $t { self.ln() }
+			}
+			impl Exponential for $t {
+				#[inline]
+				fn exp_impl(self) -> $t { self.exp() }
+			}
+		};
+	}
+	log_impl!( f64, f64 );
+	log_impl!( f32, f32 );
+	log_impl!( C<f64>, f64 );
+	log_impl!( C<f32>, f32 );
+
+	#[inline]
+	pub fn log<T,B>(x:T,base:B) -> T where T: Logarithm<B> {
+		x.log_impl(base)
+	}
+	#[inline]
+	pub fn ln<T>(x:T) -> T where T: NaturalLogarithm {
+		x.ln_impl()
+	}
+	#[inline]
+	pub fn exp<T>(x:T) -> T where T: Exponential {
+		x.exp_impl()
+	}
+
+	macro_rules! functions {
+		( $($name:ident)+ ) => { $(
+			#[inline]
+			pub fn $name<F:Float>(x:F) -> F {
+				x.$name()
+			}
+		)+ };
+	}
+	functions!( log2 log10 ln_1p exp2 exp_m1 );
+
+}
+pub use exp_log::{log,ln,log2,log10,ln_1p,exp,exp2,exp_m1};
+
+/// 2乗根、3乗根を定義するモジュール
+mod root {
+	use super::*;
+
+	/// `Float` と `Complex` に対して `sqrt`, `cbrt` に対応するトレイト
+	pub trait Root: Sized {
+		fn sqrt_impl(self) -> Self;
+		fn cbrt_impl(self) -> Self;
+	}
+
+	macro_rules! root_impl {
+		( $( $t:ty ),+ ) => { $(
+			impl Root for $t {
+				#[inline]
+				fn sqrt_impl(self) -> $t { self.sqrt() }
+				#[inline]
+				fn cbrt_impl(self) -> $t { self.cbrt() }
+			}
+		)+ };
+	}
+	root_impl!( f64, f32, C<f64>, C<f32> );
+
+	#[inline]
+	pub fn sqrt<T: Root>(x:T) -> T { x.sqrt_impl() }
+	#[inline]
+	pub fn cbrt<T: Root>(x:T) -> T { x.cbrt_impl() }
+
+}
+pub use root::{sqrt,cbrt};
+
+/// 三角関数に対する関数定義をまとめて行うマクロ
+macro_rules! trig {
+	( func($($f:ident)+) types($($t:ty),+) ) => {
+		/// 三角関数を定義するモジュール
+		mod trigonometric {
 			use super::*;
 
-			pub trait FloatOrComplex { $(
-				fn $func_impl(&self $(,$extra_args:Self)*) -> Self;
-			)+ }
-
-			func_def!{@impl FloatOrComplex for [f64,f32,Complex<f64>,Complex<f32>] { $(
-				#[inline]
-				fn $func_impl(&self $(,$extra_args:Self)*) -> Self {
-					self.$func_as($($extra_args),*)
-				}
-			)+ } }
-
-		}
-		use func_generic::FloatOrComplex;
-
-		$(
-			#[inline]
-			pub fn $func_as<T: FloatOrComplex>( $arg0:T $(,$args:T)* ) -> T {
-				$arg0.$func_impl($($args),*)
+			/// `Float` と `Complex` に対して諸々の三角関数に対応するトレイト
+			pub trait Trigonometric: Sized {
+				$( fn $f(self) -> Self; )+
 			}
-		)+
+
+			trig! {
+				name(Trigonometric)
+				func($($f)+) types($($t),+)
+			}
+
+			$(
+				#[inline]
+				pub fn $f<T: Trigonometric>(x:T) -> T {
+					x.$f()
+				}
+			)+
+		}
+		pub use trigonometric::{$($f),+};
 	};
-	(@impl $f_or_c:ident for [$t0:ty $(,$t:ty)*] { $($body:tt)+ }) => {
-		impl $f_or_c for $t0 { $($body)+ }
-		func_def!{@impl $f_or_c for [$($t),*] { $($body)+ }}
+	( name($n:ident) func($($f:ident)+) types($t0:ty $(,$t:ty)+) ) => {
+		trig!{ name($n) func($($f)+) types($t0) }
+		trig!{ name($n) func($($f)+) types($($t),+) }
 	};
-	(@impl $f_or_c:ident for [] {$($body:tt)+}) => {};
+	( name($n:ident) func($($f:ident)+) types($t:ty) ) => {
+		impl $n for $t { $(
+			#[inline]
+			fn $f(self) -> Self { self.$f() }
+		)+ }
+	};
 }
-
-func_def! {
-	sqrt_impl()  => sqrt(x)
-	cbrt_impl()  => cbrt(x)
-	exp_impl()   => exp(x)
-	ln_impl()    => ln(x)
-	sin_impl()   => sin(x)
-	cos_impl()   => cos(x)
-	tan_impl()   => tan(x)
-	sinh_impl()  => sinh(x)
-	cosh_impl()  => cosh(x)
-	tanh_impl()  => tanh(x)
-	asin_impl()  => asin(x)
-	acos_impl()  => acos(x)
-	atan_impl()  => atan(x)
-	asinh_impl() => asinh(x)
-	acosh_impl() => acosh(x)
-	atanh_impl() => atanh(x)
-}
-
-#[inline]
-pub fn log2<F:Float>(x:F) -> F {
-	x.log2()
-}
-
-#[inline]
-pub fn log10<F:Float>(x:F) -> F {
-	x.log10()
+trig!{
+	func(sin cos tan sinh cosh tanh asin acos atan asinh acosh atanh)
+	types(f64,f32,C<f64>,C<f32>)
 }
 
 #[inline]
@@ -94,8 +166,6 @@ mod power {
 		num::{NonZeroI32,NonZeroU32}
 	};
 	use num::pow::pow as pow_usize;
-	type R<T> = num::rational::Ratio<T>;
-	type C<T> = Complex<T>;
 
 	/// 関数 `power` の引数として受け入れ可能な値の型を定義するトレイト
 	pub trait SupportsPowerOf<P,R> {
