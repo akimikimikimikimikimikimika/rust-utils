@@ -20,7 +20,7 @@ crate-type = ["rlib"]
 [features]
 default = ["numerics","logging","time_description"]
 
-numerics = ["num"]
+numerics = ["num", "once_cell"]
 logging = ["log"]
 time_description = ["time", "once_cell"]
 time_older = ["time_description"]

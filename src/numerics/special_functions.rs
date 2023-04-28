@@ -3,13 +3,16 @@ extern crate once_cell;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use FloatCategory as Cat;
+use primitive_functions::*;
 
 mod gamma {
 	use super::*;
 
 	pub trait GammaFunc {
-		/// ガンマ関数を計算します
+		/// ガンマ関数
 		fn gamma(self) -> Self;
+		/// 対数ガンマ関数
+		fn log_gamma(self) -> Self;
 	}
 
 	impl GammaFunc for f64 {
@@ -37,6 +40,33 @@ mod gamma {
 
 			log_gamma_stirling_series(self).exp()
 
+		}
+		fn log_gamma(self) -> Self {
+			todo!()
+		}
+	}
+
+	type C64 = Complex<f64>;
+	impl GammaFunc for C64 {
+		fn gamma(self) -> Self {
+			todo!()
+		}
+		fn log_gamma(self) -> Self {
+			let C64 { re: x, im: y } = self;
+
+			// 予め決まった値になるものを取り除く
+			match (x.categorize(),y.categorize()) {
+				(Cat::NaN,_)|(_,Cat::NaN) => return C64 { re: f64::nan(), im: f64::nan() },
+				(Cat::PositiveInfinity,Cat::Positive) => return C64 { re: x, im: f64::infinity() },
+				(Cat::PositiveInfinity,Cat::Negative) => return C64 { re: x, im: f64::neg_infinity() },
+				(Cat::NegativeInfinity,Cat::Positive) => return C64 { re: x, im: f64::neg_infinity() },
+				(Cat::NegativeInfinity,Cat::Negative) => return C64 { re: x, im: f64::infinity() },
+				(Cat::PositiveInfinity|Cat::NegativeInfinity,Cat::ZeroPositive|Cat::ZeroNegative) => return self,
+				(_,Cat::PositiveInfinity|Cat::NegativeInfinity) => return C64 { re: f64::neg_infinity(), im: y },
+				_ => {}
+			}
+
+			todo!()
 		}
 	}
 
