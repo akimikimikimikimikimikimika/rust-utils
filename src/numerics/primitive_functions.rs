@@ -66,8 +66,8 @@ mod exp_log {
 }
 pub use exp_log::{log,ln,log2,log10,ln_1p,exp,exp2,exp_m1};
 
-/// 2乗根、3乗根を定義するモジュール
-mod root {
+/// 2乗根、3乗根、n乗根を定義するモジュール
+pub(crate) mod root {
 	use super::*;
 
 	/// `Float` と `Complex` に対して `sqrt`, `cbrt` に対応するトレイト
@@ -76,31 +76,123 @@ mod root {
 		fn cbrt_impl(self) -> Self;
 	}
 
-	macro_rules! root_impl {
-		( $( $t:ty ),+ ) => { $(
-			impl Root for $t {
+	/// 1のn乗根の値を計算するトレイト
+	pub trait Unit: Sized {
+		fn unit(n:usize) -> Vec<Self>;
+	}
+
+	/// `Float` と `Complex` に対して `sqrt_all`, `cbrt_all` に対応するトレイト
+	pub trait RootAll<C>: Root {
+		fn sqrt_all(self) -> [C;2];
+		fn cbrt_all(self) -> [C;3];
+		fn root_all<const N:usize>(self) -> [C;N];
+	}
+
+	macro_rules! impl_root {
+		( $($f:ident)+ ) => { $(
+
+			impl Root for $f {
 				#[inline]
-				fn sqrt_impl(self) -> $t { self.sqrt() }
+				fn sqrt_impl(self) -> Self { self.sqrt() }
 				#[inline]
-				fn cbrt_impl(self) -> $t { self.cbrt() }
+				fn cbrt_impl(self) -> Self { self.cbrt() }
 			}
+
+			impl Root for C<$f> {
+				#[inline]
+				fn sqrt_impl(self) -> Self { self.sqrt() }
+				#[inline]
+				fn cbrt_impl(self) -> Self { self.cbrt() }
+			}
+
+			impl Unit for C<$f> {
+				fn unit(n:usize) -> Vec<Self> {
+					use std::$f::consts::TAU;
+					(0..n).map(|i| {
+						C::from_polar(1.0, (i as $f)/(n as $f)*TAU )
+					})
+					.collect::<Vec<_>>()
+				}
+			}
+
+			impl RootAll<C<$f>> for C<$f> {
+				fn sqrt_all(self) -> [C<$f>;2] {
+					let p = self.sqrt();
+					[p,-p]
+				}
+				fn cbrt_all(self) -> [C<$f>;3] {
+					let p = self.cbrt();
+					let t1 = Complex::from_polar(
+						1.0,
+						120.0.to_radians()
+					);
+					let t2 = Complex::from_polar(
+						1.0,
+						240.0.to_radians()
+					);
+					[p,p*t1,p*t2]
+				}
+				fn root_all<const N:usize>(self) -> [C<$f>;N] {
+					let p = self.powf(1.0/(N as $f));
+					Self::unit(N).into_iter()
+					.map(|r| p*r )
+					.collect::<Vec<_>>()
+					.try_into().unwrap()
+				}
+			}
+
+			impl RootAll<C<$f>> for $f {
+				#[inline]
+				fn sqrt_all(self) -> [C<$f>;2] {
+					C {re:self,im:0.0}.sqrt_all()
+				}
+				#[inline]
+				fn cbrt_all(self) -> [C<$f>;3] {
+					C {re:self,im:0.0}.cbrt_all()
+				}
+				#[inline]
+				fn root_all<const N:usize>(self) -> [C<$f>;N] {
+					C {re:self,im:0.0}.root_all::<N>()
+				}
+			}
+
 		)+ };
 	}
-	root_impl!( f64, f32, C<f64>, C<f32> );
+	impl_root!( f64 f32 );
 
 	#[inline]
+	/// 平方根を計算します。 `Float` と `Complex` に対応します。
+	/// * 入力値が複素数の場合は主値を返します。
+	/// * 実数で負の値を与えると `NaN` を返します。
 	pub fn sqrt<T: Root>(x:T) -> T { x.sqrt_impl() }
 	#[inline]
+	/// 立方根を計算します。 `Float` と `Complex` に対応します。
+	/// * 入力値が複素数の場合は主値を返します。
 	pub fn cbrt<T: Root>(x:T) -> T { x.cbrt_impl() }
+	#[inline]
+	/// 平方根を計算します。 `Float` と `Complex` に対応します。
+	/// * 全ての根を計算します。
+	/// * 入力値が実数であっても、対応する複素数型を返します。
+	pub fn sqrt_all<INPUT,ROOT>(x:INPUT) -> [ROOT;2] where INPUT: RootAll<ROOT> { x.sqrt_all() }
+	#[inline]
+	/// 立方根を計算します。 `Float` と `Complex` に対応します。
+	/// * 全ての根を計算します。
+	/// * 入力値が実数であっても、対応する複素数型を返します。
+	pub fn cbrt_all<INPUT,ROOT>(x:INPUT) -> [ROOT;3] where INPUT: RootAll<ROOT> { x.cbrt_all() }
+	#[inline]
+	/// n乗根を計算します。 `Float` と `Complex` に対応します。
+	/// * 全ての根を計算します。
+	/// * 入力値が実数であっても、対応する複素数型を返します。
+	pub fn root_all<INPUT,ROOT,const N:usize>(x:INPUT) -> [ROOT;N] where INPUT: RootAll<ROOT> { x.root_all::<N>() }
 
 }
-pub use root::{sqrt,cbrt};
+pub use root::{sqrt,cbrt,sqrt_all,cbrt_all,root_all};
 
 /// 三角関数に対する関数定義をまとめて行うマクロ
 macro_rules! trig {
 	( func($($f:ident)+) types($($t:ty),+) ) => {
 		/// 三角関数を定義するモジュール
-		mod trigonometric {
+		pub(crate) mod trigonometric {
 			use super::*;
 
 			/// `Float` と `Complex` に対して諸々の三角関数に対応するトレイト
@@ -138,25 +230,101 @@ trig!{
 	types(f64,f32,C<f64>,C<f32>)
 }
 
-#[inline]
-pub fn atan2<F:Float>(y:F,x:F) -> F {
-	y.atan2(x)
+/// 浮動小数型のみに対応した関数の定義をまとめて行うマクロ
+macro_rules! misc {
+	( $( $name:ident ( $arg0:ident $(,$args:ident)* ) as $tr:ident )+ ) => {
+		/// 浮動小数型のみに対応した細々とした関数を定義するモジュール
+		pub(crate) mod float_misc {
+			use super::*;
+
+			$(
+				#[doc=concat!("`Float` に対して `",stringify!($name),"` を定義するトレイト")]
+				pub trait $tr: Float + Sized {
+					fn call(self $(,$args:Self)* ) -> Self;
+				}
+				impl $tr for f64 {
+					#[inline]
+					fn call(self $(,$args:Self)* ) -> Self {
+						self.$name($($args),*)
+					}
+				}
+				impl $tr for f32 {
+					#[inline]
+					fn call(self $(,$args:Self)* ) -> Self {
+						self.$name($($args),*)
+					}
+				}
+				#[inline]
+				pub fn $name<T: $tr>($arg0:T $(,$args:T)*) -> T {
+					$arg0.call($($args),*)
+				}
+			)+
+		}
+		pub use float_misc::{$($name),+};
+	};
+}
+misc! {
+	atan2(y,x) as Atan2
+	hypot(y,x) as Hypot
+	mul_add(a,b,c) as MulAdd
 }
 
-#[inline]
-pub fn hypot<F:Float>(y:F,x:F) -> F {
-	y.hypot(x)
-}
+/// `clamp` 関数を拡張した形で実装するモジュール
+mod clamp {
+	use super::*;
+	use std::cmp::Ordering;
 
-#[inline]
-pub fn abs_sub<F:Float>(x1:F,x2:F) -> F {
-	x1.abs_sub(x2)
-}
+	/// `Float` と `Complex` に clamp を実装するトレイト
+	pub trait Clamp: Sized {
+		fn clamp_impl(self,val1:Self,val2:Self) -> Self;
+	}
 
-#[inline]
-pub fn mul_add<F:Float>(a:F,b:F,c:F) -> F {
-	a.mul_add(b,c)
+	impl Clamp for f64 {
+		fn clamp_impl(self,val1:Self,val2:Self) -> Self {
+			if self.is_nan() { return self; }
+			match Self::partial_cmp(&val1,&val2) {
+				Some(Ordering::Less) => self.clamp(val1,val2),
+				Some(Ordering::Greater) => self.clamp(val2,val1),
+				Some(Ordering::Equal) => val1,
+				None => self
+			}
+		}
+	}
+	impl Clamp for f32 {
+		fn clamp_impl(self,val1:Self,val2:Self) -> Self {
+			if self.is_nan() { return self; }
+			match Self::partial_cmp(&val1,&val2) {
+				Some(Ordering::Less) => self.clamp(val1,val2),
+				Some(Ordering::Greater) => self.clamp(val2,val1),
+				Some(Ordering::Equal) => val1,
+				None => self
+			}
+		}
+	}
+	impl Clamp for C<f64> {
+		fn clamp_impl(self,val1:Self,val2:Self) -> Self {
+			C {
+				re: clamp(self.re,val1.re,val2.re),
+				im: clamp(self.im,val1.im,val2.im)
+			}
+		}
+	}
+	impl Clamp for C<f32> {
+		fn clamp_impl(self,val1:Self,val2:Self) -> Self {
+			C {
+				re: clamp(self.re,val1.re,val2.re),
+				im: clamp(self.im,val1.im,val2.im)
+			}
+		}
+	}
+
+	#[inline]
+	pub fn clamp<T: Clamp>(x:T,val1:T,val2:T) -> T {
+		x.clamp_impl(val1,val2)
+	}
+
 }
+pub use clamp::clamp;
 
 /// `power` 関数を定義するモジュール
 mod power {

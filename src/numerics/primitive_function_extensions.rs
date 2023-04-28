@@ -55,6 +55,7 @@ pub use hypot_extension::*;
 mod mul_add_extension {
 	use super::*;
 	use primitive_functions::mul_add;
+	use primitive_functions::float_misc::MulAdd;
 
 	/// `mul_add` を複数個の要素に拡張するトレイト
 	pub trait MulAddExtension<T> {
@@ -64,8 +65,9 @@ mod mul_add_extension {
 		/// * `([(a1,b1),(a2,b2),...],c).mul_add()` という表記により `a1*b1+a2*b2+...+c` を得る。
 		fn mul_add(self) -> T;
 	}
-	impl<I,T> MulAddExtension<T> for (I,T)
-	where I: IntoIterator<Item=(T,T)>, T: Float
+
+	impl<T,I> MulAddExtension<T> for (I,T)
+	where T: Float + MulAdd, I: IntoIterator<Item=(T,T)>
 	{
 		fn mul_add(self) -> T {
 			self.0.into_iter()
@@ -81,80 +83,18 @@ pub use mul_add_extension::*;
 
 
 
-/// `sqrt`, `cbrt` の拡張
-mod sqrt_cbrt_extension {
-	use super::*;
-	type C<T> = Complex<T>;
-
-	/// 複素数の `sqrt`, `cbrt` を拡張するトレイト
-	pub trait SqrtCbrtExtension<T> {
-		/// 全ての2乗根を返す
-		fn sqrt_all(&self) -> [C<T>;2];
-		/// 全ての3乗根を返す
-		fn cbrt_all(&self) -> [C<T>;3];
-	}
-
-	impl<F> SqrtCbrtExtension<F> for C<F>
-	where F: Float, f32: Into<F>
-	{
-		fn sqrt_all(&self) -> [C<F>;2] {
-			let p = self.sqrt();
-			[p,-p]
-		}
-		fn cbrt_all(&self) -> [C<F>;3] {
-			let p = self.cbrt();
-			let t1 = Complex::from_polar(
-				F::one(),
-				120.0.into().to_radians()
-			);
-			let t2 = Complex::from_polar(
-				F::one(),
-				240.0.into().to_radians()
-			);
-			[p,p*t1,p*t2]
-		}
-	}
-
-	impl SqrtCbrtExtension<f32> for f32 {
-		fn sqrt_all(&self) -> [C<f32>;2] {
-			<C<f32>>::sqrt_all(
-				&C { re:*self, im:0.0 }
-			)
-		}
-		fn cbrt_all(&self) -> [C<f32>;3] {
-			<C<f32>>::cbrt_all(
-				&C { re:*self, im:0.0 }
-			)
-		}
-	}
-
-	impl SqrtCbrtExtension<f64> for f64 {
-		fn sqrt_all(&self) -> [C<f64>;2] {
-			<C<f64>>::sqrt_all(
-				&C { re:*self, im:0.0 }
-			)
-		}
-		fn cbrt_all(&self) -> [C<f64>;3] {
-			<C<f64>>::cbrt_all(
-				&C { re:*self, im:0.0 }
-			)
-		}
-	}
-
-}
-pub use sqrt_cbrt_extension::*;
-
-
-
 /// 多項式の計算を効率よく行う `eval_poly` を定義するモジュール
 mod evaluate_polynomials {
 	use super::*;
+	use primitive_functions::float_misc::MulAdd;
 	type C<T> = Complex<T>;
 
 	// 型に合わせた実装部
 
 	/// 実数に対する Horner の方法による実装
-	fn eval_poly_real_real<'c,F>(x:F,coeffs:&'c [F]) -> F where F: Float {
+	fn eval_poly_real_real<'c,F>(x:F,coeffs:&'c [F]) -> F
+	where F: Float + MulAdd
+	{
 		use primitive_functions::mul_add;
 
 		let mut iter = coeffs.iter().rev();
@@ -170,7 +110,9 @@ mod evaluate_polynomials {
 		val
 	}
 	/// 係数が複素数の場合も同様
-	fn eval_poly_real_complex<'c,F>(x:F,coeffs:&'c [C<F>]) -> C<F> where F: Float {
+	fn eval_poly_real_complex<'c,F>(x:F,coeffs:&'c [C<F>]) -> C<F>
+	where F: Float + MulAdd
+	{
 		use primitive_functions::mul_add;
 
 		let mut iter = coeffs.iter().rev();
@@ -187,7 +129,9 @@ mod evaluate_polynomials {
 		val
 	}
 	/// 複素数に対する Goertzel の方法による実装
-	fn eval_poly_complex_complex<'c,F>(z:C<F>,coeffs:&'c [C<F>]) -> C<F> where F: Float, f32: Into<F> {
+	fn eval_poly_complex_complex<'c,F>(z:C<F>,coeffs:&'c [C<F>]) -> C<F>
+	where F: Float + MulAdd, f32: Into<F>
+	{
 		use primitive_functions::mul_add;
 
 		// 入力した変数 z = x+iy に対して p = 2x, q = - (x²+y²) を計算する
@@ -223,7 +167,9 @@ mod evaluate_polynomials {
 		}
 	}
 	/// 係数が実数の場合も同様
-	fn eval_poly_complex_real<'c,F>(z:C<F>,coeffs:&'c [F]) -> C<F> where F: Float, f32: Into<F> {
+	fn eval_poly_complex_real<'c,F>(z:C<F>,coeffs:&'c [F]) -> C<F>
+	where F: Float + MulAdd, f32: Into<F>
+	{
 		use primitive_functions::mul_add;
 
 		// 入力した変数 z = x+iy に対して p = 2x, q = - (x²+y²) を計算する
@@ -265,48 +211,25 @@ mod evaluate_polynomials {
 	}
 
 	// 実装とリンク
-
-	impl EvaluatePolynomials<f64,f64> for [f64] {
-		#[inline]
-		fn eval_poly(&self,x:f64) -> f64 {
-			eval_poly_real_real(x,self)
-		}
+	macro_rules! impl_eval_poly {
+		( $( ($x:ty,$c:ty) -> $r:ty => $f:ident )+ ) => { $(
+			impl EvaluatePolynomials<$x,$r> for [$c] {
+				#[inline]
+				fn eval_poly(&self,x:$x) -> $r {
+					$f(x,self)
+				}
+			}
+		)+ };
 	}
-	impl EvaluatePolynomials<f32,f32> for [f32] {
-		#[inline]
-		fn eval_poly(&self,x:f32) -> f32 {
-			eval_poly_real_real(x,self)
-		}
-	}
-	impl EvaluatePolynomials<f64,C<f64>> for [C<f64>] {
-		#[inline]
-		fn eval_poly(&self,x:f64) -> C<f64> {
-			eval_poly_real_complex(x,self)
-		}
-	}
-	impl EvaluatePolynomials<f32,C<f32>> for [C<f32>] {
-		#[inline]
-		fn eval_poly(&self,x:f32) -> C<f32> {
-			eval_poly_real_complex(x,self)
-		}
-	}
-	impl EvaluatePolynomials<C<f64>,C<f64>> for [f64] {
-		#[inline]
-		fn eval_poly(&self,z:C<f64>) -> C<f64> {
-			eval_poly_complex_real(z,self)
-		}
-	}
-	impl EvaluatePolynomials<C<f32>,C<f32>> for [f32] {
-		#[inline]
-		fn eval_poly(&self,z:C<f32>) -> C<f32> {
-			eval_poly_complex_real(z,self)
-		}
-	}
-	impl<F> EvaluatePolynomials<C<F>,C<F>> for [C<F>] where F: Float + From<f32> {
-		#[inline]
-		fn eval_poly(&self,x:C<F>) -> C<F> {
-			eval_poly_complex_complex(x,self)
-		}
+	impl_eval_poly! {
+		(  f64 ,  f64 ) ->   f64  => eval_poly_real_real
+		(  f32 ,  f32 ) ->   f32  => eval_poly_real_real
+		(  f64 ,C<f64>) -> C<f64> => eval_poly_real_complex
+		(  f32 ,C<f32>) -> C<f32> => eval_poly_real_complex
+		(C<f64>,  f64 ) -> C<f64> => eval_poly_complex_real
+		(C<f32>,  f32 ) -> C<f32> => eval_poly_complex_real
+		(C<f64>,C<f64>) -> C<f64> => eval_poly_complex_complex
+		(C<f32>,C<f32>) -> C<f32> => eval_poly_complex_complex
 	}
 
 	// 外部からアクセスできるインターフェース
