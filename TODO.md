@@ -24,7 +24,7 @@ TODO
 - `par_for_each!` マクロ
 	- [ ] NDArray 向けの `each_nd` の他に一般のイテレータ向けの `each` 関数も実装する
 - [ ] トークン系のマクロで、トークンをビルド時に標準エラー出力に出力されるようにしたものを用意
-- [x] `unzip` を用意できればいいかな
+- [ ] `unzip` を用意できればいいかな
 - `par_for_each!` を `ParallelIterator` の多数 Zip に対応する
 	- `(IndexedParallelIterator,..).into_par_iter()` により生成できる `MultiZip` 型
 	- `MultiZip` は個数に制限があるので、そこを俊敏に振り分けるようにする
