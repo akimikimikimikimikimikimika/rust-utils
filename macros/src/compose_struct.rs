@@ -199,20 +199,6 @@ mod typedef {
 		pub src: String
 	}
 
-	/// 構造体のフィールドを表す
-	pub struct StructField {
-		/// フィールドに付されたアトリビュートのリスト
-		pub attributes: Vec<Attr>,
-		/// `pub` などの可視性 (フィールドにアクセス可能な範囲) の情報
-		pub visibility: TS,
-		/// フィールドの名前
-		pub name: Ident,
-		/// フィールドの値
-		pub value: FieldValue,
-		/// 元のソースコード
-		pub src: String
-	}
-
 	/// 列挙体を表す型
 	pub struct Enum {
 		/// 列挙体の名前
@@ -1925,17 +1911,6 @@ mod modification {
 		}
 		fn set_default(&mut self) {
 			self.fields.set_default();
-		}
-	}
-	impl SetDefault for StructField {
-		fn check_default(&mut self) {
-			if check_attr_flag(
-				&mut self.attributes,
-				|a| matches!(a,Attr::Default)
-			).is_some() { self.set_default(); }
-		}
-		fn set_default(&mut self) {
-			self.value.set_default();
 		}
 	}
 	impl SetDefault for Enum {
