@@ -193,10 +193,8 @@ mod typedef {
 		pub visibility: TS,
 		/// `where` によるジェネリクスの拘束条件
 		pub where_condition: TS,
-		/// 構造体のフィールドのリスト
-		pub fields: Vec<StructField>,
-		/// 内包する別のデータ型
-		pub enclosed: Vec<Data>,
+		/// 構造体のフィールド
+		pub fields: Fields,
 		/// 元のソースコード
 		pub src: String
 	}
@@ -437,8 +435,10 @@ mod parser {
 		fn parse_from(src:S) -> R;
 	}
 
-	/// 構造体や列挙体のヘッダーをパースした結果。それぞれの場合でさらに `body`の内容をパースして `Struct` や `Enum` を使用する
+	/// `impl ParseFrom for Data` で構造体や列挙体のヘッダーをパースした結果。それぞれ `impl ParseFrom for Struct` や `impl ParseFrom for Enum` に渡すことでさらに `body` の内容をパースして `Struct` や `Enum` を構成する。
 	struct ParsingResult {
+		/// データ型の種類
+		pub kind: ParsedKind,
 		/// 付されたアトリビュートのリスト
 		pub attr: Vec<Attr>,
 		/// `pub` などのアクセス可能な範囲の情報
@@ -449,10 +449,31 @@ mod parser {
 		pub generics: TS,
 		/// `where` によるジェネリクスの拘束条件
 		pub wh: TS,
-		/// `{ ... }` の中身
+		/// `{ ... }` や `( ... )` の中身
 		pub body: TS,
 		/// 元のソースコード
 		pub src: String
+	}
+
+	#[derive(Clone,Copy)]
+	/// `impl ParseFrom for Data` でパースした結果として、そのデータ型の種別を表す。
+	enum ParsedKind {
+		/// フィールドのない構造体
+		StructUnit,
+		/// 名前なしフィールドのある構造体
+		StructUnnamed,
+		/// 名前ありフィールドのある構造体
+		StructNamed,
+		/// 列挙体
+		Enum,
+		/// 型エイリアス
+		TypeAlias,
+		/// トレイトエイリアス
+		TraitAlias,
+		/// デバッグフラグ
+		Debug,
+		/// 定まっていない
+		Unknown
 	}
 
 	/// 構造体や列挙体内部のように、通常のバリアント/フィールドと表記上内包する `Data` のいずれか一方を返せる型
@@ -547,27 +568,12 @@ mod parser {
 				GotEqual, GotArtifact, GotSemicolon
 			}
 			type PP = ParsingPhase;
-
-			/// 新しいデータの種類を表す型
-			enum Type {
-				/// 構造体
-				Struct,
-				/// 列挙体
-				Enum,
-				/// 型エイリアス
-				TypeAlias,
-				/// トレイトエイリアス
-				TraitAlias,
-				/// デバッグフラグ
-				Debug,
-				/// まだ定まっていない
-				Unknown
-			}
+			type K = ParsedKind;
 
 			let mut phase = PP::Beginning;
 			let mut attr:Vec<Attr> = vec![];
 			let mut vis = TS::new();
-			let mut ty = Type::Unknown;
+			let mut kind = K::Unknown;
 			let mut name:Option<Ident> = None;
 			let mut generics = TS::new();
 			let mut generics_enclosure_count = 0_u8;
@@ -582,10 +588,10 @@ mod parser {
 				};
 				let s = tt.to_string();
 
-				match (&phase,&s[..],tt.clone(),&ty) {
-					(PP::Beginning,"debug",_,Type::Unknown) => {
+				match (&phase,&s[..],tt.clone(),&kind) {
+					(PP::Beginning,"debug",_,K::Unknown) => {
 						phase = PP::GotType;
-						ty = Type::Debug;
+						kind = K::Debug;
 						if iter.peek().map_or(
 							false,
 							|t| t.to_string()==";"
@@ -594,18 +600,18 @@ mod parser {
 						}
 						break
 					},
-					(PP::Beginning|PP::GotAttrBody,"#",_,Type::Unknown) => {
+					(PP::Beginning|PP::GotAttrBody,"#",_,K::Unknown) => {
 						phase = PP::GotAttrHash;
 					},
-					(PP::GotAttrHash,_,TT::Group(g),Type::Unknown) => {
+					(PP::GotAttrHash,_,TT::Group(g),K::Unknown) => {
 						attr.push( Attr::parse_from(g.stream()) );
 						phase = PP::GotAttrBody;
 					}
-					(PP::Beginning|PP::GotAttrBody,"pub",_,Type::Unknown) => {
+					(PP::Beginning|PP::GotAttrBody,"pub",_,K::Unknown) => {
 						vis = quote!(pub);
 						phase = PP::GotPub;
 					},
-					(PP::GotPub,_,TT::Group(g),Type::Unknown) => {
+					(PP::GotPub,_,TT::Group(g),K::Unknown) => {
 						match g.delimiter() {
 							Delimiter::Parenthesis => {
 								let t = TT::Group(g);
@@ -618,20 +624,20 @@ mod parser {
 							)
 						}
 					},
-					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"struct",_,Type::Unknown) => {
-						ty = Type::Struct;
+					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"struct",_,K::Unknown) => {
+						kind = K::StructUnit;
 						phase = PP::GotType;
 					},
-					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"enum",_,Type::Unknown) => {
-						ty = Type::Enum;
+					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"enum",_,K::Unknown) => {
+						kind = K::Enum;
 						phase = PP::GotType;
 					},
-					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"type",_,Type::Unknown) => {
-						ty = Type::TypeAlias;
+					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"type",_,K::Unknown) => {
+						kind = K::TypeAlias;
 						phase = PP::GotType;
 					},
-					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"trait",_,Type::Unknown) => {
-						ty = Type::TraitAlias;
+					(PP::Beginning|PP::GotAttrBody|PP::GotPub|PP::GotVisibility,"trait",_,K::Unknown) => {
+						kind = K::TraitAlias;
 						phase = PP::GotType;
 					},
 					(PP::GotType,_,TT::Ident(i),_) => {
@@ -661,7 +667,7 @@ mod parser {
 						generics = quote!(#generics #t);
 						phase = PP::GotGenerics;
 					},
-					(PP::GotName|PP::GotGenericsEnd,"where",_,Type::Struct|Type::Enum) => {
+					(PP::GotName|PP::GotGenericsEnd,"where",_,K::StructUnit|K::Enum) => {
 						if generics_enclosure_count!=0 {
 							error(
 								format!("予期しないトークン {} が含まれています",s),
@@ -670,7 +676,7 @@ mod parser {
 						}
 						phase = PP::GotWhere;
 					},
-					(PP::GotName|PP::GotGenericsEnd,_,TT::Group(g),Type::Struct|Type::Enum) => {
+					(PP::GotName|PP::GotGenericsEnd,_,TT::Group(g),K::Enum) => {
 						if matches!(g.delimiter(),Delimiter::Brace) {
 							body = g.stream();
 							phase = PP::GotBody;
@@ -683,8 +689,33 @@ mod parser {
 							);
 						}
 					},
-					(PP::GotWhereItem,_,TT::Group(g),Type::Struct|Type::Enum) => {
-						if matches!(g.delimiter(),Delimiter::Brace) {
+					(PP::GotName|PP::GotGenericsEnd,_,TT::Group(g),K::StructUnit) => {
+						match g.delimiter() {
+							Delimiter::Brace => {
+								kind = K::StructNamed;
+								body = g.stream();
+								phase = PP::GotBody;
+								break;
+							},
+							Delimiter::Parenthesis => {
+								kind = K::StructUnnamed;
+								body = g.stream();
+								phase = PP::GotBody;
+							},
+							_ => {
+								error(
+									"予期しない括弧にマッチしました",
+									Some(&src)
+								);
+							}
+						}
+					},
+					(PP::GotName|PP::GotGenericsEnd,";",_,K::StructUnit) => {
+						phase = PP::GotSemicolon;
+						break;
+					},
+					(PP::GotWhereItem,_,TT::Group(g),K::Enum) => {
+						if generics_enclosure_count==0 && matches!(g.delimiter(),Delimiter::Brace) {
 							body = g.stream();
 							phase = PP::GotBody;
 							break;
@@ -693,25 +724,54 @@ mod parser {
 							wh = quote!( #wh #g );
 						}
 					},
-					(PP::GotWhere|PP::GotWhereItem,_,t,Type::Struct|Type::Enum) => {
-						wh = quote!(#wh #t);
-						phase = PP::GotWhereItem;
+					(PP::GotWhereItem,_,TT::Group(g),K::StructUnit) => {
+						match (generics_enclosure_count,g.delimiter()) {
+							(0,Delimiter::Brace) => {
+								kind = K::StructNamed;
+								phase = PP::GotBody;
+								break;
+							},
+							(0,Delimiter::Parenthesis) => {
+								kind = K::StructUnnamed;
+								phase = PP::GotBody;
+							},
+							_ => {
+								wh = quote!( #wh #g );
+							}
+						}
 					},
-					(PP::GotName|PP::GotGenericsEnd,"=",_,Type::TypeAlias|Type::TraitAlias) => {
-						phase = PP::GotEqual;
-					},
-					(PP::GotArtifact|PP::GotWhereItem,";",_,Type::TypeAlias|Type::TraitAlias) => {
+					(PP::GotBody,";",_,K::StructUnnamed) => {
 						phase = PP::GotSemicolon;
 						break;
 					},
-					(PP::GotArtifact,"where",_,Type::TraitAlias) => {
+					(PP::GotName|PP::GotGenericsEnd,"=",_,K::TypeAlias|K::TraitAlias) => {
+						phase = PP::GotEqual;
+					},
+					(PP::GotArtifact|PP::GotWhereItem,";",t,K::TypeAlias|K::TraitAlias) => {
+						if generics_enclosure_count==0 {
+							phase = PP::GotSemicolon;
+							break;
+						}
+						else {
+							wh = quote!( #wh #t );
+						}
+					},
+					(PP::GotArtifact,"where",_,K::TraitAlias) => {
 						phase = PP::GotWhere;
 					},
-					(PP::GotEqual|PP::GotArtifact,_,t,Type::TypeAlias|Type::TraitAlias) => {
+					(PP::GotEqual|PP::GotArtifact,_,t,K::TypeAlias|K::TraitAlias) => {
 						body = quote!( #body #t );
 						phase = PP::GotArtifact;
 					},
-					(PP::GotWhere|PP::GotWhereItem,_,t,Type::TraitAlias) => {
+					(PP::GotWhere|PP::GotWhereItem,"<",t,_) => {
+						generics_enclosure_count += 1;
+						wh = quote!( #wh #t );
+					},
+					(PP::GotWhere|PP::GotWhereItem,">",t,_) => {
+						generics_enclosure_count -= 1;
+						wh = quote!( #wh #t );
+					},
+					(PP::GotWhere|PP::GotWhereItem,_,t,_) => {
 						wh = quote!( #wh #t );
 						phase = PP::GotWhereItem;
 					},
@@ -724,27 +784,28 @@ mod parser {
 				whole = quote!( #whole #tt );
 			}
 
-			match (&ty,phase) {
-				(Type::Struct|Type::Enum,PP::GotBody)|(Type::TypeAlias|Type::TraitAlias,PP::GotSemicolon) => {},
-				(Type::Debug,PP::GotType) => { return Some(Data::Debug); },
-				(Type::Unknown,PP::Beginning) => { return None; },
+			match (&kind,phase) {
+				(K::StructNamed|K::Enum,PP::GotBody)|(K::StructUnnamed|K::StructUnit|K::TypeAlias|K::TraitAlias,PP::GotSemicolon) => {},
+				(K::Debug,PP::GotType) => { return Some(Data::Debug); },
+				(K::Unknown,PP::Beginning) => { return None; },
 				_ => {
 					error("終わり方が正しくありません",Some(&src));
 				}
 			}
 
 			let pr = ParsingResult {
+				kind,
 				attr, vis,
 				name: name.unwrap(),
 				generics, wh, body,
 				src: whole.to_string()
 			};
 
-			Some( match &ty {
-				Type::Struct => Data::Struct(Struct::parse_from(pr)),
-				Type::Enum => Data::Enum(Enum::parse_from(pr)),
-				Type::TypeAlias => Data::Type(TypeAlias::parse_from(pr)),
-				Type::TraitAlias => Data::Trait(TraitAlias::parse_from(pr)),
+			Some( match &kind {
+				K::StructUnit|K::StructUnnamed|K::StructNamed => Data::Struct(Struct::parse_from(pr)),
+				K::Enum => Data::Enum(Enum::parse_from(pr)),
+				K::TypeAlias => Data::Type(TypeAlias::parse_from(pr)),
+				K::TraitAlias => Data::Trait(TraitAlias::parse_from(pr)),
 				_ => { unreachable!(); }
 			} )
 		}
@@ -753,25 +814,8 @@ mod parser {
 	// 構造体をパース
 	impl ParseFrom<ParsingResult,Self> for Struct {
 		fn parse_from(pr:ParsingResult) -> Self {
-			let mut fields:Vec<StructField> = vec![];
-			let mut enclosed:Vec<Data> = vec![];
-			let mut iter = pr.body.into_iter();
-
-			loop {
-				type IoD = ItemOrData<StructField>;
-				match StructField::parse_from(&mut iter) {
-					IoD::Item(f) => fields.push(f),
-					IoD::Data(d) => enclosed.push(d),
-					IoD::None => break
-				}
-			}
-
-			if fields.is_empty() {
-				error(
-					"フィールドの数を 0 にすることはできません",
-					Some(&pr.src)
-				);
-			}
+			type F = Fields;
+			type K = ParsedKind;
 
 			Self {
 				name: pr.name,
@@ -779,189 +823,17 @@ mod parser {
 				attributes: pr.attr,
 				visibility: pr.vis,
 				where_condition: pr.wh,
-				fields, enclosed,
+				fields: match pr.kind {
+					K::StructUnit => F::Unit,
+					K::StructUnnamed => F::Unnamed(
+						UnnamedFields::parse_from(pr.body)
+					),
+					K::StructNamed => F::Named(
+						NamedFields::parse_from(pr.body)
+					),
+					_ => { unreachable!(); }
+				},
 				src: pr.src
-			}
-		}
-	}
-
-	// 構造体のフィールドをパース
-	impl<I: TI> ParseFrom<&mut I,ItemOrData<Self>> for StructField {
-		fn parse_from(iter:&mut I) -> ItemOrData<Self> {
-			let src = TS::from_iter(iter.clone()).to_string();
-
-			/// 現在のパースの過程を表す型
-			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
-				GotPub, GotVisibility,
-				GotName, GotColon, GotType,
-				GotEqual, GotDefaultVal,
-				GotSubValType, GotSubValHeader, GotSubValBody,
-				GotEnclosedType, GotEnclosedHeader, GotEnclosedBody,
-				GotComma, GotSemicolon
-			}
-			type PP = ParsingPhase;
-			type IoD = ItemOrData<StructField>;
-
-			let mut phase = PP::Beginning;
-			let mut enclosed = false;
-			let mut attr:Vec<Attr> = vec![];
-			let mut vis = TS::new();
-			let mut name:Option<Ident> = None;
-			let mut ty = TS::new();
-			let mut generics_count = 0_u8;
-			let mut default = TS::new();
-			let mut is_subtype = false;
-			let mut whole = TS::new();
-
-			loop {
-				let tt = match iter.next() {
-					Some(t) => t,
-					None => { break }
-				};
-				let s = tt.to_string();
-
-				match (&phase,&s[..],tt.clone()) {
-					(PP::Beginning|PP::GotAttrBody,"#",_) => {
-						phase = PP::GotAttrHash;
-					},
-					(PP::GotAttrHash,_,TT::Group(g)) => {
-						attr.push( Attr::parse_from(g.stream()) );
-						phase = PP::GotAttrBody;
-					},
-					(PP::Beginning|PP::GotAttrBody,"pub",_) => {
-						vis = quote!(pub);
-						phase = PP::GotPub;
-					},
-					(PP::GotPub,_,TT::Group(g)) => {
-						match g.delimiter() {
-							Delimiter::Parenthesis => {
-								vis = quote!( #vis #g );
-								phase = PP::GotVisibility;
-							},
-							_ => error(
-								"予期しない括弧にマッチしました",
-								Some(&src)
-							)
-						}
-					},
-					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,"struct"|"enum"|"type"|"trait",_) => {
-						phase = PP::GotEnclosedType;
-						enclosed = true;
-					},
-					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,_,TT::Ident(i)) => {
-						name = Some(i);
-						phase = PP::GotName;
-					},
-					(PP::GotName,":",_) => {
-						phase = PP::GotColon;
-					},
-					(PP::GotName,"=",_) => {
-						phase = PP::GotEqual;
-					},
-					(PP::GotType,"<",t) => {
-						generics_count += 1;
-						ty = quote!( #ty #t );
-					},
-					(PP::GotType,">",t) => {
-						generics_count -= 1;
-						ty = quote!( #ty #t );
-					},
-					(PP::GotType,"=",t) => {
-						if generics_count!=0 {
-							ty = quote!( #ty #t );
-						}
-						else { phase = PP::GotEqual; }
-					},
-					(PP::GotType,",",t) => {
-						if generics_count!=0 {
-							ty = quote!( #ty #t );
-						}
-						else {
-							phase = PP::GotComma;
-							break;
-						}
-					},
-					(PP::GotColon|PP::GotType,_,t) => {
-						ty = quote!( #ty #t );
-						phase = PP::GotType;
-					},
-					(PP::GotEqual,"struct"|"enum",t) => {
-						is_subtype = true;
-						default = quote!(#t);
-						phase = PP::GotSubValType;
-					},
-					(PP::GotSubValHeader,_,TT::Group(g)) => {
-						if matches!(g.delimiter(),Delimiter::Brace) {
-							phase = PP::GotSubValBody;
-						}
-						default = quote!( #default #g );
-					},
-					(PP::GotSubValType|PP::GotSubValHeader,_,t) => {
-						default = quote!( #default #t );
-						phase = PP::GotSubValHeader;
-					},
-					(PP::GotSubValBody|PP::GotDefaultVal,",",_) => {
-						phase = PP::GotComma;
-						break;
-					},
-					(PP::GotEqual|PP::GotDefaultVal,_,t) => {
-						default = quote!( #default #t );
-						phase = PP::GotDefaultVal;
-					},
-					(PP::GotEnclosedHeader,_,TT::Group(g)) => {
-						if matches!(g.delimiter(),Delimiter::Brace) {
-							phase = PP::GotEnclosedBody;
-							whole = quote!( #whole #tt );
-							break;
-						}
-					},
-					(PP::GotEnclosedHeader,";",_) => {
-						phase = PP::GotSemicolon;
-						whole = quote!( #whole #tt );
-						break;
-					},
-					(PP::GotEnclosedType|PP::GotEnclosedHeader,_,_) => {
-						phase = PP::GotEnclosedHeader;
-					},
-					_ => error(
-						format!("予期しないトークン {} が含まれています",s),
-						Some(&src)
-					)
-				}
-
-				whole = quote!( #whole #tt );
-			}
-
-			type FV = FieldValue;
-			match (phase,enclosed) {
-				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,false) => {
-					IoD::Item( Self {
-						attributes: attr,
-						visibility: vis,
-						name: name.unwrap(),
-						value: match (default.is_empty(),is_subtype) {
-							(true,false) => FV::Type {
-								name: ty,
-								default: None
-							},
-							(false,false) => FV::Type {
-								name: ty,
-								default: Some(default)
-							},
-							(false,true) => FV::Data(Data::parse_from(default)),
-							(true,true) => { unreachable!() }
-						},
-						src: whole.to_string()
-					} )
-				},
-				(PP::GotComma|PP::GotSemicolon|PP::GotEnclosedBody,true) => {
-					IoD::Data( Data::parse_from(whole) )
-				},
-				(PP::Beginning,_) => IoD::None,
-				_ => {
-					error("終わり方が正しくありません",Some(&src));
-				}
 			}
 		}
 	}
@@ -1703,45 +1575,34 @@ mod modification {
 			let Self {
 				ref mut attributes,
 				ref mut fields,
-				ref mut enclosed,
 				ref visibility,
 				..
 			} = self;
 
-			let mut st = fields.collect_subtype();
-			st.extend(enclosed.iter_mut());
-			copy_attr_to_subtype(&*attributes,&mut st);
+			type F = Fields;
+			match fields {
+				F::Unit => {},
+				F::Unnamed(f) => {
+					let mut st = f.collect_subtype();
+					copy_attr_to_subtype(&*attributes,&mut st);
 
-			for d in enclosed.iter_mut() {
-				inherit_visibility(visibility, d);
+					for d in f.enclosed.iter_mut() {
+						inherit_visibility(visibility,d);
+					}
+				},
+				F::Named(f) => {
+					let mut st = f.collect_subtype();
+					copy_attr_to_subtype(&*attributes,&mut st);
+
+					for d in f.enclosed.iter_mut() {
+						inherit_visibility(visibility,d);
+					}
+				}
 			}
 
 			remove_duplicate(attributes);
 
-			fields.iter_mut()
-			.for_each(|f| f.modify() );
-			enclosed.iter_mut()
-			.for_each(|d| d.modify() );
-		}
-	}
-
-	impl Modify for StructField {
-		fn modify(&mut self) {
-			self.check_pub_all();
-			self.check_default();
-
-			let Self {
-				ref mut attributes,
-				ref mut value,
-				ref visibility,
-				..
-			} = self;
-
-			if let Some(d) = value.get_subtype() {
-				inherit_visibility(visibility,d);
-			}
-			move_field_attrs_to_subtype(attributes,value);
-			value.modify();
+			fields.modify();
 		}
 	}
 
@@ -1872,13 +1733,6 @@ mod modification {
 		/// このオブジェクトに含まれるサブ構造体/列挙体のリストを返す
 		fn collect_subtype(&mut self) -> Vec<&mut Data>;
 	}
-	impl CollectSubType for Vec<StructField> {
-		fn collect_subtype(&mut self) -> Vec<&mut Data> {
-			self.iter_mut()
-			.filter_map(|f| f.value.get_subtype() )
-			.collect()
-		}
-	}
 	impl CollectSubType for Vec<EnumVariant> {
 		fn collect_subtype(&mut self) -> Vec<&mut Data> {
 			self.iter_mut()
@@ -1963,26 +1817,35 @@ mod modification {
 		}
 		fn pub_all(&mut self) {
 			self.visibility = quote!(pub);
-			self.fields.iter_mut()
-			.for_each(|f| {
-				f.visibility = quote!(pub);
-			});
+			type F = Fields;
+			match self.fields {
+				F::Unit => {},
+				F::Unnamed( UnnamedFields {
+					ref mut fields,
+					ref mut enclosed
+				} ) => {
+					for f in fields.iter_mut() {
+						f.visibility = quote!(pub);
+					}
+					for d in enclosed.iter_mut() {
+						d.pub_all();
+					}
+				},
+				F::Named( NamedFields {
+					ref mut fields,
+					ref mut enclosed
+				} ) => {
+					for f in fields.iter_mut() {
+						f.visibility = quote!(pub);
+					}
+					for d in enclosed.iter_mut() {
+						d.pub_all();
+					}
+				}
+			}
 			self.fields.collect_subtype()
 			.iter_mut()
 			.for_each(|d| d.pub_all() );
-		}
-	}
-	impl PubAll for StructField {
-		fn check_pub_all(&mut self) {
-			if let Some(_) = check_attr_flag(
-				&mut self.attributes,
-				|a| matches!(a,Attr::PubAll)
-			) { self.pub_all(); }
-		}
-		fn pub_all(&mut self) {
-			self.visibility = quote!(pub);
-			self.value.get_subtype()
-			.map(|d| d.pub_all() );
 		}
 	}
 	impl PubAll for Enum {
@@ -2061,9 +1924,7 @@ mod modification {
 			).is_some() { self.set_default(); }
 		}
 		fn set_default(&mut self) {
-			for f in self.fields.iter_mut() {
-				f.set_default();
-			}
+			self.fields.set_default();
 		}
 	}
 	impl SetDefault for StructField {
@@ -2108,12 +1969,18 @@ mod modification {
 		fn set_default(&mut self) {
 			match self {
 				Self::Unit => {},
-				Self::Named(NamedFields{fields,..}) => {
+				Self::Named( NamedFields {
+					ref mut fields,
+					..
+				} ) => {
 					for f in fields.iter_mut() {
 						f.set_default();
 					}
 				},
-				Self::Unnamed(UnnamedFields{fields,..}) => {
+				Self::Unnamed( UnnamedFields {
+					ref mut fields,
+					..
+				} ) => {
 					for f in fields.iter_mut() {
 						f.set_default();
 					}
@@ -2398,14 +2265,16 @@ mod compose {
 				let a = self.attributes.compose(global);
 				let v = &self.visibility;
 				let w = add_where(&self.where_condition.clone());
-				let mut body = TS::new();
-				for f in self.fields.iter() {
-					let ft = f.compose(global);
-					body = quote!( #body #ft, );
+				let mut this = quote!( #a #v struct #n #g #w );
+
+				let f = self.fields.compose(global);
+				this = quote!( #this #f );
+
+				type F = Fields;
+				if matches!(self.fields,F::Unit|F::Unnamed(..)) {
+					this = quote!( #this; );
 				}
-				let this = quote!(
-					#a #v struct #n #g #w { #body }
-				);
+
 				*global = quote!( #global #this );
 			}
 
@@ -2414,17 +2283,14 @@ mod compose {
 					"一部の値にはデフォルト値が指定されていますが、他の値には指定されていません",
 					Some(&self.src)
 				),
-				QuadBool::TrueOptional => {
+				QuadBool::TrueRequired|QuadBool::TrueOptional => {
 					let a = self.attributes.compose_default(global);
-					let mut body = TS::new();
-					for f in self.fields.iter() {
-						let ft = f.compose_default(global);
-						body = quote!( #body #ft, );
-					}
+					let w = add_where(&self.where_condition);
+					let f = self.fields.compose_default(global);
 					let this = quote!(
-						#a impl #g std::default::Default for #n #g {
+						#a impl #g std::default::Default for #n #g #w {
 							fn default() -> Self {
-								Self { #body }
+								Self #f
 							}
 						}
 					);
@@ -2433,30 +2299,10 @@ mod compose {
 				_ => {}
 			}
 
-			for d in self.enclosed.iter() {
-				d.compose(global);
-			}
-
 			quote!( #n #g )
 		}
 		fn compose_default(&self,_:&mut TS) -> TS {
 			quote!( Default::default() )
-		}
-	}
-
-	impl Compose for StructField {
-		fn compose(&self,global:&mut TS) -> TS {
-			let a = self.attributes.compose(global);
-			let v = &self.visibility;
-			let n = &self.name;
-			let t = self.value.compose(global);
-			quote!( #a #v #n: #t )
-		}
-		fn compose_default(&self,global:&mut TS) -> TS {
-			let a = self.attributes.compose_default(global);
-			let n = &self.name;
-			let v = self.value.compose_default(global);
-			quote!( #a #n: #v )
 		}
 	}
 
@@ -2799,10 +2645,7 @@ mod has_default {
 
 	impl HasDefault for Struct {
 		fn has_default(&self) -> B {
-			merge_as_fields(
-				self.fields.iter()
-				.map(|f| f.value.has_default() )
-			)
+			self.fields.has_default()
 		}
 	}
 
