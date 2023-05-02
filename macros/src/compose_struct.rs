@@ -1279,6 +1279,9 @@ mod parser {
 					(PP::GotName,":",_) => {
 						phase = PP::GotColon;
 					},
+					(PP::GotName,"=",_) => {
+						phase = PP::GotEqual;
+					},
 					(PP::GotType,"<",t) => {
 						generics_count += 1;
 						ty = quote!( #ty #t );
@@ -2408,7 +2411,7 @@ mod compose {
 				let ft = f.compose(global);
 				grouped = quote!( #grouped #ft, );
 			}
-			quote!( ( #grouped ) )
+			quote!( { #grouped } )
 		}
 		fn compose_default(&self,global:&mut TS) -> TS {
 			let mut grouped = TS::new();
@@ -2416,15 +2419,16 @@ mod compose {
 				let ft = f.compose_default(global);
 				grouped = quote!( #grouped #ft, );
 			}
-			quote!( ( #grouped ) )
+			quote!( { #grouped } )
 		}
 	}
 
 	impl Compose for UnnamedField {
 		fn compose(&self,global:&mut TS) -> TS {
 			let a = self.attributes.compose(global);
-			let v = self.value.compose(global);
-			quote!( #a #v )
+			let vis = &self.visibility;
+			let val = self.value.compose(global);
+			quote!( #a #vis #val )
 		}
 		fn compose_default(&self,global:&mut TS) -> TS {
 			let a = self.attributes.compose_default(global);
@@ -2437,8 +2441,9 @@ mod compose {
 		fn compose(&self,global:&mut TS) -> TS {
 			let a = self.attributes.compose(global);
 			let n = &self.name;
-			let v = self.value.compose(global);
-			quote!( #a #n: #v )
+			let vis = &self.visibility;
+			let val = self.value.compose(global);
+			quote!( #a #vis #n: #val )
 		}
 		fn compose_default(&self,global:&mut TS) -> TS {
 			let a = self.attributes.compose_default(global);
