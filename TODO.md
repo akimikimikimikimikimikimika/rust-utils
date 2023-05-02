@@ -42,7 +42,10 @@ TODO
 		- 2重3重の `from` を使って
 	- [ ] `try_from` になっている型への対応
 		- `Option<T>` 型として返す
-- [ ] 積の形にマクロ展開する手続き型マクロ `macro_product!` を実装
+- [ ] マクロ展開を便利にする手続き型マクロ
+	- [ ] 積の形にマクロ展開する `macro_product!` を実装
+	- [ ] リストを逆順に返す `macro_rev!` を実装
+	- [ ] リストの項目を1つずつ増やしながら呼び出す `macro_dup!` を実装
 ```rust
 macro_product! {
 	func = (sin) (cos) (tan)
@@ -51,6 +54,8 @@ macro_product! {
 }
 // func, types に括弧内の値が代入されて println!(...) が 12 個生成される。
 // 括弧の形式は [] () {} の任意にする
+macro_rev! { space_separated: A B C } // C B A
+// 最初に区切り方を指定し、その後に値を指定する
 ```
 - [x] `smart_for_each!` の移動
 - [ ] アーカイブ形式の一般化

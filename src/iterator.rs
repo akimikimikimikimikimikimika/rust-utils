@@ -1,4 +1,10 @@
 use super::*;
+pub(crate) use std::iter::{
+	Iterator,
+	ExactSizeIterator,
+	DoubleEndedIterator,
+	FusedIterator
+};
 
 
 
@@ -113,46 +119,9 @@ mod min_max {
 
 
 
-/// 同一要素からなるタプル型を配列に変換するモジュール
-mod tuple_to_array {
-
-	/// タプルを配列に変換します
-	pub trait TupleToArray<T,const N:usize> {
-		/// タプルを配列に変換します
-		fn to_array(self) -> [T;N];
-	}
-
-	/// `impl` をマクロによりまとめて実行する
-	macro_rules! impl_t2a {
-		(indices: $i0:tt $($i:tt)+ ) => {
-			impl_t2a! {@each T T $i0 | $($i),+ }
-		};
-		(@each $t:ident $($tx:ident $x:tt),+ | $y0:tt $(,$y:tt)* ) => {
-			impl<$t> TupleToArray<$t,$y0> for ($($tx,)+) {
-				fn to_array(self) -> [T;$y0] {
-					[ $(self.$x),+ ]
-				}
-			}
-			impl_t2a! {@each $t $($tx $x,)+ $t $y0 | $($y),* }
-		};
-		(@each $t:ident $($tx:ident $x:tt),+ | ) => {};
-	}
-	impl_t2a!(indices: 0 1 2 3 4 5 6 7 8 9 10 11 12 );
-
-}
-use tuple_to_array::*;
-
-
-
 /// 複数個のイテレータによる Zip を実装するモジュール
 mod multi_zip {
 	use super::*;
-	use std::iter::{
-		Iterator,
-		ExactSizeIterator,
-		DoubleEndedIterator,
-		FusedIterator
-	};
 
 	/// イテレータのタプルを zip する関数を含むモジュール
 	mod zip_tuples {
@@ -160,80 +129,77 @@ mod multi_zip {
 
 		/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
 		pub trait IntoZippedIterator: Sized {
-			/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-			/// * 最大で12個のイテレータまで対応
-			fn into_iter(self) -> ZipN<Self>;
-			/// * イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-			/// * 最大で12個のイテレータまで対応
-			fn zip(self) -> ZipN<Self> { self.into_iter() }
+			/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
+			fn into_zipped_iter(self) -> ZipN<Self>;
+			/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
+			fn zip(self) -> ZipN<Self> { self.into_zipped_iter() }
 		}
 
 		/// 複数のイテレータを単一のイテレータに zip したイテレータです
 		pub struct ZipN<T> {
-			iter_tuples: T
+			pub(crate) iter_tuples: T
 		}
 
-		/// イテレータの要素数ごとに `ZipN` を実装するマクロ
+		/// * イテレータの要素数ごとに `ZipN` を実装するマクロ
+		/// * `impl_zipped_iter!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 		macro_rules! impl_zipped_iter {
-			( | $t0:ident $i0:tt $( $t:ident $i:tt )+ ) => {
-				impl_zipped_iter! { $t0 $i0 | $( $t $i )+ }
+			( $( $i:ident $n:tt )+ ) => {
+				impl_zipped_iter! {@each | $( $i $n )+ }
 			};
-			( $( $t:ident $i:tt )+ | $tn:ident $in:tt $( $others:tt )* ) => {
-
-				impl_zipped_iter! { $( $t $i )+ | }
-
-				impl_zipped_iter! { $( $t $i )+ $tn $in | $( $others )* }
-
+			(@each $( $i:ident $n:tt )* | $in:ident $nn:tt $( $others:tt )* ) => {
+				impl_zipped_iter! {@each $( $i $n )* | }
+				impl_zipped_iter! {@each $( $i $n )* $in $nn | $( $others )* }
 			};
-			( $( $t:ident $i:tt )+ | ) => {
+			(@each $( $i:ident $n:tt )+ | ) => {
 
-				impl<$($t),+> IntoZippedIterator for ($($t,)+)
-				where $( $t: Iterator ),+ {
-					fn into_iter(self) -> ZipN<Self> {
+				impl<$($i),+> IntoZippedIterator for ($($i,)+)
+				where $( $i: Iterator ),+ {
+					fn into_zipped_iter(self) -> ZipN<Self> {
 						ZipN { iter_tuples: self }
 					}
 				}
 
-				impl<$($t),+> Iterator for ZipN<($($t,)+)>
-				where $( $t: Iterator ),+
+				impl<$($i),+> Iterator for ZipN<($($i,)+)>
+				where $( $i: Iterator ),+
 				{
 
-					type Item = ( $( $t::Item, )+ );
+					type Item = ( $( $i::Item, )+ );
 
 					fn next(&mut self) -> Option<Self::Item> {
-						Some( ( $( self.iter_tuples.$i.next()?, )+ ) )
+						Some( ( $( self.iter_tuples.$n.next()?, )+ ) )
 					}
 
 					fn size_hint(&self) -> (usize, Option<usize>) {
-						let size_hint = ( $( self.iter_tuples.$i.size_hint(), )+ );
-						let l = [ $( size_hint.$i.0 ),+ ].minimum();
-						let u = [ $( size_hint.$i.1 ),+ ].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
+						let size_hint = ( $( self.iter_tuples.$n.size_hint(), )+ );
+						let l = [ $( size_hint.$n.0 ),+ ].minimum();
+						let u = [ $( size_hint.$n.1 ),+ ].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
 						(l,u)
 					}
 
 				}
 
-				impl<$($t),+> ExactSizeIterator for ZipN<($($t,)+)>
-				where $( $t: ExactSizeIterator ),+ {}
+				impl<$($i),+> ExactSizeIterator for ZipN<($($i,)+)>
+				where $( $i: ExactSizeIterator ),+ {}
 
-				impl<$($t),+> DoubleEndedIterator for ZipN<($($t,)+)>
-				where $( $t: DoubleEndedIterator + ExactSizeIterator ),+ {
+				impl<$($i),+> DoubleEndedIterator for ZipN<($($i,)+)>
+				where $( $i: DoubleEndedIterator + ExactSizeIterator ),+ {
 					fn next_back(&mut self) -> Option<Self::Item> {
-						let size = ( $( self.iter_tuples.$i.len(), )+ );
+						let size = ( $( self.iter_tuples.$n.len(), )+ );
 						let size_min = size.to_array().minimum();
-						$( for _ in size_min..size.$i {
-							self.iter_tuples.$i.next_back();
+						$( for _ in size_min..size.$n {
+							self.iter_tuples.$n.next_back();
 						} )+
-						Some( ( $( self.iter_tuples.$i.next_back()?, )+ ) )
+						Some( ( $( self.iter_tuples.$n.next_back()?, )+ ) )
 					}
 				}
 
-				impl<$($t),+> FusedIterator for ZipN<($($t,)+)>
-				where $( $t: FusedIterator ),+ {}
+				impl<$($i),+> FusedIterator for ZipN<($($i,)+)>
+				where $( $i: FusedIterator ),+ {}
 
 			};
+			(@each | ) => {};
 		}
-		impl_zipped_iter!( | T0 0 T1 1 T2 2 T3 3 T4 4 T5 5 T6 6 T7 7 T8 8 T9 9 T10 10 T11 11 );
+		pub(crate) use impl_zipped_iter;
 
 	}
 	pub use zip_tuples::*;
@@ -308,7 +274,7 @@ mod multi_zip {
 				.collect::<Vec<_>>();
 				let size_min = size.clone().minimum();
 				( self.iters.iter_mut(), size.into_iter() )
-				.into_iter()
+				.into_zipped_iter()
 				.for_each(|(i,s)| {
 					for _ in size_min..s { i.next_back(); }
 				});
@@ -337,5 +303,122 @@ pub use multi_zip::*;
 
 
 
+/// 複数個のイテレータによりチェーンを実装するモジュール
+mod multi_chain {
+    use super::*;
+
+	/// 複数のイテレータのタプルをチェーンしたイテレータに変換するトレイト
+	pub trait IntoChainedIterator: Sized {
+		/// イテレータのタプル `(I1,I2,I3,...)` を `I1`→`I2`→`I3` という順に連結した1つのイテレータに変換します
+		fn into_chained_iter(self) -> Chain<Self>;
+	}
+
+	/// 複数のイテレータをチェーンする (連続に繋げる) イテレータです
+	pub struct Chain<T> {
+		pub(crate) iter_tuples: T,
+		pub(crate) current: usize,
+		pub(crate) current_back: usize
+	}
+
+	/// * 複数のイテレータに対する `Chain` トレイトを実装するマクロ
+	/// * `impl_chain_iter!( I0 0 I1 1 I2 2 ... I(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! impl_chain_iter {
+		( $( $i:ident $n:tt )+ ) => {
+			impl_chain_iter! {@each T | $( $i $n )+ }
+		};
+		(@each $t:ident $( $i:ident $n:tt )* | $in:ident $nn:tt $( $others:tt )* ) => {
+			impl_chain_iter! {@each $t $( $i $n )* | }
+			impl_chain_iter! {@each $t $( $i $n )* $in $nn | $($others)* }
+		};
+		(@each $t:ident $( $i:ident $n:tt )+ | ) => {
+
+			impl<$t,$($i),+> IntoChainedIterator for ($($i,)+)
+			where $( $i: Iterator<Item=$t> ),+
+			{
+				fn into_chained_iter(self) -> Chain<Self> {
+					Chain { iter_tuples: self, current: 0, current_back: 0 }
+				}
+			}
+
+			impl<$t,$($i),+> Iterator for Chain<($($i,)+)>
+			where $( $i: Iterator<Item=$t> ),+
+			{
+				type Item = $t;
+
+				fn next(&mut self) -> Option<Self::Item> {
+					$( if self.current==$n {
+						if let s @ Some(_) = self.iter_tuples.$n.next() { return s; }
+						self.current += 1;
+					} )+
+					None
+				}
+
+				fn size_hint(&self) -> (usize, Option<usize>) {
+					let size_hint = ( $( self.iter_tuples.$n.size_hint(),)+ );
+					let l = 0 $(+ size_hint.$n.0 )+;
+					let u = ( $(size_hint.$n.1,)+ )
+					.zip_options()
+					.map(|t| 0 $(+ t.$n)+ );
+					(l,u)
+				}
+			}
+
+			impl_chain_iter! {@backward $t 0 | $( $i $n )+ }
+
+			impl<$t,$($i),+> ExactSizeIterator for Chain<($($i,)+)>
+			where $( $i: ExactSizeIterator<Item=$t> ),+ {}
+
+			impl<$t,$($i),+> FusedIterator for Chain<($($i,)+)>
+			where $( $i: FusedIterator<Item=$t> ),+ {}
+
+		};
+		(@each $t:ident | ) => {};
+		(@backward
+			$t:ident $n_largest:tt
+			$( $i:ident $n:tt )* |
+			$in:ident $nn:tt $( $others:tt )*
+		) => {
+			impl_chain_iter! {@backward $t $nn $in $nn $( $i $n )* | $($others)* }
+		};
+		(@backward
+			$t:ident $n_largest:tt
+			$( $i:ident $n:tt )+ |
+		) => {
+			impl<$t,$($i),+> DoubleEndedIterator for Chain<($($i,)+)>
+			where $( $i: DoubleEndedIterator<Item=$t> + ExactSizeIterator ),+
+			{
+				fn next_back(&mut self) -> Option<Self::Item> {
+					$( if self.current_back==($n_largest-$n) {
+						if let s @ Some(_) = self.iter_tuples.$n.next_back() { return s; }
+						self.current_back += 1;
+					} )+
+					None
+				}
+			}
+		};
+	}
+	pub(crate) use impl_chain_iter;
+
+}
+pub use multi_chain::*;
+
+
+
 /// カーテジアン積のイテレータのモジュール
 mod multi_product {}
+
+
+
+#[cfg(test)]
+#[test]
+fn test() {
+	let iter = (
+		(1..=3).map(|x| x*x ),
+		(1..=3).map(|x| x*x*x ),
+	).chain();
+	let src = iter
+	.map(|x| format!("{}",x) )
+	.collect::<Vec<_>>()
+	.join(",");
+	println!("{}",src);
+}

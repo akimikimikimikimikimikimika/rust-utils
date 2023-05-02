@@ -27,13 +27,15 @@ mod hypot_extension {
 		fn hypot(self) -> T;
 	}
 
-	macro_rules! impl_hft {
+	/// * タプル `(T,T,...)` の各要素に対して、 hypot を計算するトレイト `HypotForTuple` の実装をまとめて行うマクロ
+	/// * `impl_hypot!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! impl_hypot {
 		(indices: $($i:tt)+ ) => {
-			impl_hft! {@each T | $($i),+ }
+			impl_hypot! {@each T | $($i),+ }
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
-			impl_hft! {@each $t $($tx $x),* | }
-			impl_hft! {@each $t $($tx $x,)* $t $y0 | $($y),* }
+			impl_hypot! {@each $t $($tx $x),* | }
+			impl_hypot! {@each $t $($tx $x,)* $t $y0 | $($y),* }
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | ) => {
 			impl<$t:Float> HypotForTuple<$t> for ($t,$($tx),*) {
@@ -44,7 +46,7 @@ mod hypot_extension {
 			}
 		};
 	}
-	impl_hft! {indices: 1 2 3 4 5 }
+	pub(crate) use impl_hypot;
 
 }
 pub use hypot_extension::*;

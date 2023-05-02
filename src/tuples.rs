@@ -1,29 +1,36 @@
 mod options {
 
-	pub trait Zip<T> {
+	pub trait ZipOptions<T> {
 		/// 複数の Option 型を含む型を1つの Option 型に変換します。要素のうち1つでも None があれば None になります
 		fn zip_options(self) -> Option<T>;
 	}
 
-	macro_rules! zip_many {
-		( $i0:tt:$t0:ident $($in:tt:$tn:ident)+ ) => {
-			zip_many!{ ($i0:$t0) $($in:$tn)+ }
+	/// * `(Option<T1>,Option<T2>,...)` を `Option<(T1,T2,...)>` に変換するトレイト `ZipOptions` の実装をまとめて行うマクロ
+	/// * `impl_zip_options!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! impl_zip_options {
+		( $( $t:ident $n:tt )+ ) => {
+			impl_zip_options!{@each | $( $t $n )+ }
 		};
-		( ($($ic:tt:$tc:ident)+) $i0:tt:$t0:ident $($in:tt:$tn:ident)* ) => {
-			impl<$($tc),+> Zip<($($tc,)+)> for ($(Option<$tc>,)+) {
-				fn zip_options(self) -> Option<($($tc,)+)> {
-					Some( ( $(self.$ic?,)+ ) )
+		(@each $( $t:ident $n:tt )* | $tn:ident $nn:tt $( $others:tt )* ) => {
+			impl_zip_options! {@each $( $t $n )* | }
+			impl_zip_options! {@each $( $t $n )* $tn $nn | $( $others )* }
+		};
+		(@each $( $t:ident $n:tt )+ | ) => {
+			impl<$($t),+> ZipOptions<($($t,)+)> for ($(Option<$t>,)+) {
+				fn zip_options(self) -> Option<($($t,)+)> {
+					Some( ( $(self.$n?,)+ ) )
 				}
 			}
-			zip_many!{ ($($ic:$tc)+ $i0:$t0) $($in:$tn)* }
 		};
-		( ($($ic:tt:$tc:ident)+) ) => {};
+		(@each | ) => {};
 	}
-	zip_many!{ 0:T0 1:T1 2:T2 3:T3 4:T4 5:T5 6:T6 7:T7 8:T8 9:T9 10:T10 11:T11 }
+	pub(crate) use impl_zip_options;
 
-	impl<T,const N:usize> Zip<[T;N]> for [Option<T>;N] {
+	impl<T,const N:usize> ZipOptions<[T;N]> for [Option<T>;N] {
 		fn zip_options(self) -> Option<[T;N]> {
+			// 予め全要素の `None` チェックを行う
 			for ov in self.iter() { ov.as_ref()?; }
+			// 全て `Some(..)` なので、安全にアンラップできる
 			Some( self.map(|ov| ov.unwrap() ) )
 		}
 	}
@@ -33,45 +40,41 @@ pub use options::*;
 
 
 
-mod iterators {
+/// 同一要素からなるタプル型を配列に変換するモジュール
+mod tuple_to_array {
 
-	use std::{
-		iter::{Zip,Chain,Iterator},
-		marker::Sized
-	};
-
-	pub trait ZipIters<A,B> {
-		/// 2つのイテレータを同時にイテレートするイテレータを生成します
-		fn zip(self) -> Zip<A,B>;
-	}
-	impl<A,B> ZipIters<A,B> for (A,B)
-	where A:Iterator, B:Iterator
-	{
-		fn zip(self) -> Zip<A,B> {
-			std::iter::zip(self.0,self.1)
-		}
+	/// タプルを配列に変換します
+	pub trait TupleToArray<T,const N:usize> {
+		/// タプルを配列に変換します
+		fn to_array(self) -> [T;N];
 	}
 
-	pub trait ChainIters<A,B> {
-		/// 2つのイテレータを連結したイテレータを生成します
-		fn chain(self) -> Chain<A,B>;
+	/// * タプルを配列に変換するトレイト `TupleToArray` の実装をまとめて行うマクロ
+	/// * `impl_tuple_to_array!(indices: 0 1 2 ... N )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! impl_tuple_to_array {
+		(indices: $i0:tt $($i:tt)+ ) => {
+			impl_tuple_to_array! {@each T T $i0 | $($i),+ }
+		};
+		(@each $t:ident $($tx:ident $x:tt),+ | $y0:tt $(,$y:tt)* ) => {
+			impl<$t> TupleToArray<$t,$y0> for ($($tx,)+) {
+				fn to_array(self) -> [$t;$y0] {
+					[ $(self.$x),+ ]
+				}
+			}
+
+			impl_tuple_to_array! {@each $t $($tx $x,)+ $t $y0 | $($y),* }
+		};
+		(@each $t:ident $($tx:ident $x:tt),+ | ) => {};
 	}
-	impl<A,B,T> ChainIters<A,B> for (A,B)
-	where A:Iterator<Item=T>+Sized, B:Iterator<Item=T>
-	{
-		fn chain(self) -> Chain<A,B> {
-			self.0.into_iter().chain(self.1.into_iter())
-		}
-	}
+	pub(crate) use impl_tuple_to_array;
 
 }
-pub use iterators::*;
+pub use tuple_to_array::*;
 
 
 
 mod array {
 	use super::*;
-	use std::fmt::Debug;
 
 	/// インデクス付き配列を生成するトレイト
 	pub trait WithIndex<T,const N:usize> {
@@ -90,19 +93,36 @@ mod array {
 		}
 	}
 
+	/// 配列のタプルからタプルの配列を生成するトレイト
 	pub trait ZipArrays<T> {
+		/// 同じ長さの固定長配列のタプル `([T1;N],[T2;N],...)` からタプルの配列 `[(T1,T2,...);N]` を生成します
 		fn zip(self) -> T;
 	}
-	impl<A:Debug,B:Debug,const N:usize> ZipArrays<[(A,B);N]> for ([A;N],[B;N]) {
-		fn zip(self) -> [(A,B);N] {
-			// 標準の zip は unstable なので、カスタム実装する
-			(self.0.into_iter(),self.1.into_iter())
-			.zip()
-			.collect::<Vec<_>>()
-			.try_into()
-			.unwrap()
-		}
+
+	/// * 配列のタプルからタプルの配列を生成するトレイト `ZipArrays` の実装をまとめて行うマクロ
+	/// * `impl_zip_arrays!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! impl_zip_arrays {
+		( $( $t:ident $n:tt )+ ) => {
+			impl_zip_arrays! {@each | $( $t $n )+ }
+		};
+		(@each $( $t:ident $n:tt )* | $tn:ident $nn:tt $( $others:tt )* ) => {
+			impl_zip_arrays! {@each $( $t $n )* | }
+			impl_zip_arrays! {@each $( $t $n )* $tn $nn | $( $others )* }
+		};
+		(@each $( $t:ident $n:tt )+ | ) => {
+			impl<$($t),+,const N:usize> ZipArrays<[($($t,)+);N]> for ($([$t;N],)+) where $($t: std::fmt::Debug),+ {
+				fn zip(self) -> [($($t,)+);N] {
+					( $( self.$n.into_iter() ,)+ )
+					.into_zipped_iter()
+					.collect::<Vec<_>>()
+					.try_into()
+					.unwrap() // アンラップのために Debug トレイトが必要
+				}
+			}
+		};
+		(@each | ) => {};
 	}
+	pub(crate) use impl_zip_arrays;
 
 }
 pub use array::*;
