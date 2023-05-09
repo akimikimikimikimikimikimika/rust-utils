@@ -24,7 +24,9 @@ pub use for_iters_tuple::{
 
 /// * イテレータの要素数ごとに `Zip` を実装するマクロ
 /// * `impl_zip_iters!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+/// * 異なる型パラメータとタプルのインデクスを交互に並べる
 macro_rules! impl_zip_iters {
+	// マクロのエントリポイント: 全ての実装をモジュールで囲む
 	( $( $i:ident $n:tt )+ ) => {
 		mod impl_zip_iters {
 			use super::{
@@ -33,13 +35,16 @@ macro_rules! impl_zip_iters {
 				*
 			};
 
+			// `|` で要素を区切り、要素数ごとにマクロで実装を定義
 			impl_zip_iters! {@each | $( $i $n )+ }
 		}
 	};
+	// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
 	(@each $( $i:ident $n:tt )* | $in:ident $nn:tt $( $others:tt )* ) => {
 		impl_zip_iters! {@each $( $i $n )* | }
 		impl_zip_iters! {@each $( $i $n )* $in $nn | $( $others )* }
 	};
+	// 全ての要素が `|` より前にある場合に実装を行う
 	(@each $( $i:ident $n:tt )+ | ) => {
 
 		impl<$($i),+> IntoIter for ($($i,)+)
@@ -87,6 +92,7 @@ macro_rules! impl_zip_iters {
 		where $( $i: FusedIterator ),+ {}
 
 	};
+	// `|` の前に要素が全くない場合
 	(@each | ) => {};
 }
 pub(crate) use impl_zip_iters;
@@ -135,8 +141,10 @@ pub(crate) use for_parallel_iters_tuple::{
 };
 
 /// * イテレータの要素数ごとに `Zip` を実装するマクロ
-/// * `impl_zip_parallel_iters!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+/// * `impl_zip_parallel_iters!( I0 P0 T0 0 I1 P1 T1 1 I2 P2 T2 2 ... I(N-1) P(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+/// * `I*` `P*` `T*` の異なる型パラメータとタプルのインデクスをこの順で並べていく
 macro_rules! impl_zip_parallel_iters {
+	// マクロのエントリポイント: 全ての実装をモジュールで囲む
 	( $( $i:ident $p:ident $t:ident $n:tt )+ ) => {
 		#[cfg(feature="parallel")]
 		mod impl_zip_parallel_iters {
@@ -145,6 +153,7 @@ macro_rules! impl_zip_parallel_iters {
 				ZipCallbackForParallelIteratorsTuple as ZipCallback,
 				ZipProducerForParallelIteratorsTuple as ZipProducer,
 				IntoTupleZippedParallelIterator as IntoIter,
+				ZipForIteratorsTuple as ZipSerial,
 				rayon_plumbing::*,
 				*
 			};
@@ -152,10 +161,12 @@ macro_rules! impl_zip_parallel_iters {
 			impl_zip_parallel_iters! {@each | $( $i $p $t $n )+ }
 		}
 	};
+	// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
 	(@each $( $i:ident $p:ident $t:ident $n:tt )* | $in:ident $pn:ident $tn:ident $nn:tt $( $others:tt )* ) => {
 		impl_zip_parallel_iters! {@each $( $i $p $t $n )* | }
 		impl_zip_parallel_iters! {@each $( $i $p $t $n )* $in $pn $tn $nn | $( $others )* }
 	};
+	// 全ての要素が `|` より前にある場合に実装を行う
 	(@each $( $i:ident $p:ident $t:ident $n:tt )+ | ) => {
 
 		impl<$($i),+> IntoIter for ( $($i,)+ )
@@ -163,6 +174,21 @@ macro_rules! impl_zip_parallel_iters {
 		{
 			fn into_zipped_iter(self) -> Zip<Self> {
 				Zip { iters_tuple: self }
+			}
+		}
+
+		impl<$($i),+,$($t),+> IntoParallelIterator for ZipSerial<($($i,)+)>
+		where
+			$( $i: IntoParallelIterator + Iterator<Item=$t>, $t: Send, )+
+			Zip<($($i::Iter,)+)>: ParallelIterator<Item=($($t,)+)>
+		{
+			type Item = ($($t,)+);
+			type Iter = Zip<($($i::Iter,)+)>;
+
+			fn into_par_iter(self) -> Self::Iter {
+				Zip {
+					iters_tuple: ( $( self.iters_tuple.$n.into_par_iter(), )+ )
+				}
 			}
 		}
 
@@ -223,6 +249,9 @@ macro_rules! impl_zip_parallel_iters {
 		impl_zip_parallel_iters!{@cb_entry $( $i $p $t $n )+ }
 
 	};
+	// `|` の前に要素が全くない場合
+	(@each | ) => {};
+	// `ProducerCallback` の実装のエントリポイント: `IndexedParallelIterator` の実装を行う
 	(@cb_entry
 		$i:ident $p:ident $t:ident $n:tt
 		$( $if:ident $pf:ident $tf:ident $nf:tt )*
@@ -262,6 +291,7 @@ macro_rules! impl_zip_parallel_iters {
 		impl_zip_parallel_iters!{@cb | $i $p $t $n $( $if $pf $tf $nf )* }
 
 	};
+	// `ProducerCallback` の実装: N個の要素があれば、最初の N-1 個についてはここで実装を行う
 	(@cb
 		$( $ip:ident $pp:ident $tp:ident $np:tt )* |
 		$i:ident $p:ident $t:ident $n:tt
@@ -299,6 +329,7 @@ macro_rules! impl_zip_parallel_iters {
 		}
 
 	};
+	// `ProducerCallback` の実装: 最後の要素はここで実装を行う
 	(@cb
 		$( $ip:ident $pp:ident $tp:ident $np:tt )* |
 		$i:ident $p:ident $t:ident $n:tt
@@ -318,7 +349,6 @@ macro_rules! impl_zip_parallel_iters {
 		}
 
 	};
-	(@each | ) => {};
 }
 pub(crate) use impl_zip_parallel_iters;
 
@@ -328,11 +358,13 @@ pub(crate) use impl_zip_parallel_iters;
 mod for_iters_array {
 	use super::*;
 
+	/// 複数のイテレータの配列をベクタのイテレータに変換するトレイト
 	pub struct Zip<I> {
 		iters: Vec<I>
 	}
 
 	pub trait IntoIter<I> {
+		/// イテレータの配列 `[I;N]` や `Vec<I>` などを配列のイテレータ `Iterator<Item=Vec<T>>` に変換します
 		fn zip(self) -> Zip<I>;
 	}
 	impl<II,I,T> IntoIter<I> for II
@@ -417,6 +449,6 @@ mod for_iters_array {
 
 }
 pub use for_iters_array::{
-	Zip as ZipForIteratorArray,
+	Zip as ZipForIteratorsArray,
 	IntoIter as IntoArrayZippedIterator
 };
