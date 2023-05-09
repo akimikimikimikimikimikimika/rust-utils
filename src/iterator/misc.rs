@@ -132,6 +132,7 @@ pub use min_max::IteratorMinMaxExtension;
 mod cartesian_product {
     use super::*;
 
+	/// 複数のイテレータのカーテジアン積をとったイテレータ
 	pub struct CartesianProduct<I,O,V> {
 		iters_tuple: I,
 		iters_original_tuple: O,
@@ -139,7 +140,9 @@ mod cartesian_product {
 	}
 	type Product<I,O,V> = CartesianProduct<I,O,V>;
 
+	/// 複数のイテレータのタプルをカーテジアン積をとった単一のイテレータに変換するトレイト
 	pub trait IntoIter<O,V>: Sized {
+		/// イテレータのタプル `(I1,I2,I3,...)` をカーテジアン積をとったイテレータ `Iterator<Item=(T1,T2,T3,...)` に変換します。各イテレータが `Clone` を実装していなければなりません。
 		fn cartesian_product(self) -> Product<Self,O,V>;
 	}
 
@@ -274,6 +277,7 @@ mod cartesian_product {
 	}
 
 	type UL = (usize,Option<usize>);
+	/// サイズヒントの計算に役立つ積と和の計算
 	fn size_hint_mul_add(a:UL,b:UL,c:UL) -> UL {
 		(
 			a.0 * b.0 + c.0,
