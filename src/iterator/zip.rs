@@ -162,7 +162,11 @@ macro_rules! impl_zip_parallel_iters {
 		}
 	};
 	// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
-	(@each $( $i:ident $p:ident $t:ident $n:tt )* | $in:ident $pn:ident $tn:ident $nn:tt $( $others:tt )* ) => {
+	(@each
+		$( $i:ident $p:ident $t:ident $n:tt )* |
+		$in:ident $pn:ident $tn:ident $nn:tt
+		$( $others:tt )*
+	) => {
 		impl_zip_parallel_iters! {@each $( $i $p $t $n )* | }
 		impl_zip_parallel_iters! {@each $( $i $p $t $n )* $in $pn $tn $nn | $( $others )* }
 	};

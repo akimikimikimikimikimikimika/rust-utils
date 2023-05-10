@@ -10,6 +10,7 @@ TODO
 		- ガンマ、ゼータとか
 	- [ ] 任意精度の実数や整数の型を作るか、既存のライブラリの型をインテグレートする
 	- `power` 関数
+		- [ ] `power` の戻り値の型を`SupportsPowerOf` トレイトの型パラメータにするのではなく、 `type PowerOutput;` で指定できるようにする
 		- [ ] `power(f64,f32)` や `power(Complex<f64>,f32)`, `power(Complex<f64>,Complex<f32>)` に対応させる
 		- [ ] `NonZero**` への対応
 			- 2重3重の `from` を使って
@@ -35,10 +36,12 @@ TODO
 		- [ ] リストの項目を1つずつ増やしながら呼び出す `macro_dup!` を実装
 - イテレータ関連
 	- [ ] 配列型の `Zip` に対して並列版を用意する
-	- [ ] `unzip` を用意できればいいかな
-	- [x] `Iterator.chain` に対して複数のイテレータをチェーンする関数を用意できればいいな
+	- [ ] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
+	- [ ] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
 	- [ ] `CartesianProduct` の並列版を用意する
 	- [ ] 配列に対する `CartesianProduct` を用意する
+	- [ ] `unzip` を用意できればいいかな
+	- [x] `Iterator.chain` に対して複数のイテレータをチェーンする関数を用意できればいいな
 	- [ ] `permutations` や `combination` のイテレータを用意する
 	- [ ] 他にも [ここ](https://docs.rs/itertools/0.10.5/itertools/trait.Itertools.html#method.cartesian_product) にある操作の幾つかに対応させる
 	- [ ] `par_for_each!` を実装した `Zip` に対応させる
