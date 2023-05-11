@@ -6,9 +6,9 @@ mod for_iters_tuple {
 	/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
 	pub trait IntoIter: Sized {
 		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-		fn into_zipped_iter(self) -> Zip<Self>;
+		fn into_zipped_iter(self) -> Zip<Self> { self.zip() }
 		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-		fn zip(self) -> Zip<Self> { self.into_zipped_iter() }
+		fn zip(self) -> Zip<Self>;
 	}
 
 	/// 複数のイテレータを単一のイテレータに zip したイテレータ
@@ -49,7 +49,7 @@ macro_rules! impl_zip_iters {
 
 		impl<$($i),+> IntoIter for ($($i,)+)
 		where $( $i: Iterator ),+ {
-			fn into_zipped_iter(self) -> Zip<Self> {
+			fn zip(self) -> Zip<Self> {
 				Zip { iters_tuple: self }
 			}
 		}
@@ -106,9 +106,11 @@ mod for_parallel_iters_tuple {
 	/// 複数の並列イテレータのタプルをタプルのイテレータに変換するトレイト
 	pub trait IntoIter: Sized {
 		/// 並列イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-		fn into_zipped_iter(self) -> Zip<Self>;
+		fn into_zipped_iter(self) -> Zip<Self> { self.zip() }
 		/// 並列イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
-		fn zip(self) -> Zip<Self> { self.into_zipped_iter() }
+		fn zip(self) -> Zip<Self>;
+		/// 並列イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します。要素数が全て等しい必要があります。
+		fn zip_eq(self) -> Zip<Self>;
 	}
 
 	/// 複数の並列イテレータを単一のイテレータに zip した並列イテレータ
@@ -127,13 +129,11 @@ mod for_parallel_iters_tuple {
 	}
 
 }
-
 #[cfg(feature="parallel")]
 pub use for_parallel_iters_tuple::{
 	Zip as ZipForParallelIteratorsTuple,
 	IntoIter as IntoTupleZippedParallelIterator
 };
-
 #[cfg(feature="parallel")]
 pub(crate) use for_parallel_iters_tuple::{
 	ZipProducer as ZipProducerForParallelIteratorsTuple,
@@ -161,6 +161,7 @@ macro_rules! impl_zip_parallel_iters {
 			impl_zip_parallel_iters! {@each | $( $i $p $t $n )+ }
 		}
 	};
+
 	// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
 	(@each
 		$( $i:ident $p:ident $t:ident $n:tt )* |
@@ -176,8 +177,12 @@ macro_rules! impl_zip_parallel_iters {
 		impl<$($i),+> IntoIter for ( $($i,)+ )
 		where $( $i: IndexedParallelIterator ),+
 		{
-			fn into_zipped_iter(self) -> Zip<Self> {
+			fn zip(self) -> Zip<Self> {
 				Zip { iters_tuple: self }
+			}
+			fn zip_eq(self) -> Zip<Self> {
+				impl_zip_parallel_iters!{@zip_eq_cond self $($n)+ }
+				self.zip()
 			}
 		}
 
@@ -255,6 +260,7 @@ macro_rules! impl_zip_parallel_iters {
 	};
 	// `|` の前に要素が全くない場合
 	(@each | ) => {};
+
 	// `ProducerCallback` の実装のエントリポイント: `IndexedParallelIterator` の実装を行う
 	(@cb_entry
 		$i:ident $p:ident $t:ident $n:tt
@@ -352,6 +358,37 @@ macro_rules! impl_zip_parallel_iters {
 			}
 		}
 
+	};
+
+	// `IntoIter` の `zip_eq` の条件式を用意: 要素数が1個の場合は判定なし
+	(@zip_eq_cond self 0 ) => {};
+	// `IntoIter` の `zip_eq` の条件式を用意: 要素数が複数の場合
+	(@zip_eq_cond $s:ident $($n:tt)+ ) => {
+		let l = ( $( $s.$n.len(), )+ );
+		if impl_zip_parallel_iters!{@ne l -> for $($n)+ } {
+			let src = [
+				"要素数が合致しません:".to_string(),
+				$( format!(
+					concat!("iters.",stringify!($n),".len() = {}"),
+					l.$n
+				), )+
+				String::new()
+			].join("\n");
+			panic!("{}",src);
+		}
+	};
+	// zip_eq_cond 向けの非等価性の判定
+	(@ne
+		$l:ident -> $( ($cond:expr) )*
+		for $n0:tt $n1:tt $($n:tt)*
+	) => {
+		impl_zip_parallel_iters! {@ne
+			$l -> $( ($cond) )* ($l.$n0!=$l.$n1)
+			for $n1 $($n)*
+		}
+	};
+	(@ne $l:ident -> $( ($cond:expr) )+ for $nl:tt ) => {
+		$( ($cond) )||+
 	};
 }
 pub(crate) use impl_zip_parallel_iters;

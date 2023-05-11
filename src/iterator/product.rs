@@ -177,8 +177,7 @@ macro_rules! impl_product_iters {
 
 				impl_product_iters! {@next
 					it iot cv
-					( $($na)+ )
-					( $($nfm)+ ) $nl
+					() ($($nfm)+) ($($nml)+) $nl
 				}
 
 				None
@@ -218,44 +217,34 @@ macro_rules! impl_product_iters {
 	// many_impl の next() のコンポーネント: 末尾の2成分
 	(@next
 		$it:ident $iot:ident $cv:ident
-		( $n0:tt $n1:tt )
-		($( $nfm:tt )+) $nl:tt
+		( $($ncf:tt)+ ) () () $nl:tt
 	) => {
-
-		if let Some(v) = $it.$n1.next() {
+		if let Some(v) = $it.$nl.next() {
 			return Some( (
-				$( $cv.$nfm.clone(), )+ v
+				$( $cv.$ncf.clone(), )+ v
 			) )
 		}
-
-		$it.$n1 = $iot.$n1.clone();
-		if let Some(v) = $it.$n0.next() {
-			$cv.$n0 = v;
-			return Some( (
-				$ ($cv.$nfm.clone(), )+
-				$it.$nl.next()?
-			) )
-		}
-
 	};
 	// many_impl の next() のコンポーネント: 先頭から末尾の手前まで (末尾に辿り着くまで繰り返し呼び出される)
 	(@next
 		$it:ident $iot:ident $cv:ident
-		( $n0:tt $n1:tt $($nr:tt)+ )
-		($( $nfm:tt )+) $nl:tt
+		( $($ncf:tt)* ) ( $nc:tt $($ncl:tt)* )
+		( $ns:tt $($nsl:tt)* ) $nl:tt
 	) => {
 		impl_product_iters! {@next
 			$it $iot $cv
-			( $n1 $($nr)+ )
-			($($nfm)+) $nl
+			( $($ncf)* $nc ) ( $($ncl)* )
+			( $($nsl)* ) $nl
 		}
 
-		$it.$n1 = $iot.$n1.clone();
-		if let Some(v) = $it.$n0.next() {
-			$cv.$n0 = v;
-			$cv.$n1 = $it.$n1.next()?;
+		$it.$ns = $iot.$ns.clone();
+		if let Some(v) = $it.$nc.next() {
+			$cv.$nc = v;
+			$( $cv.$ncl = $it.$ncl.next()?; )*
 			return Some( (
-				$ ($cv.$nfm.clone(), )+
+				$( $cv.$ncf.clone(), )*
+				$cv.$nc.clone(),
+				$( $cv.$ncl.clone(), )*
 				$it.$nl.next()?
 			) )
 		}
