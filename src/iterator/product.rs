@@ -175,12 +175,11 @@ macro_rules! impl_product_iters {
 				} = self;
 				let cv = cvo.as_mut()?;
 
-				impl_product_iters! {@next
-					it iot cv
-					() ($($nfm)+) ($($nml)+) $nl
-				}
+				let last = impl_product_iters!{@next
+					it iot cv ($($na)+)
+				};
 
-				None
+				Some( ( $( cv.$nfm.clone(), )+ last ) )
 			}
 
 			fn size_hint(&self) -> (usize, Option<usize>) {
@@ -214,40 +213,229 @@ macro_rules! impl_product_iters {
 		{}
 	};
 
-	// many_impl の next() のコンポーネント: 末尾の2成分
+	// many_impl の next() のコンポーネント: 先頭の成分
 	(@next
 		$it:ident $iot:ident $cv:ident
-		( $($ncf:tt)+ ) () () $nl:tt
+		($nc:tt $($ny:tt)+)
 	) => {
-		if let Some(v) = $it.$nl.next() {
-			return Some( (
-				$( $cv.$ncf.clone(), )+ v
-			) )
+		impl_product_iters!{@next
+			$it $iot $cv () $nc ($($ny)+)
+			{ $it.$nc.next()? }
 		}
 	};
-	// many_impl の next() のコンポーネント: 先頭から末尾の手前まで (末尾に辿り着くまで繰り返し呼び出される)
+	// many_impl の next() のコンポーネント: 先頭以外の残りの成分
 	(@next
 		$it:ident $iot:ident $cv:ident
-		( $($ncf:tt)* ) ( $nc:tt $($ncl:tt)* )
-		( $ns:tt $($nsl:tt)* ) $nl:tt
+		($($nd:tt)*) $np:tt ($nc:tt $($ny:tt)*)
+		{$($inner:tt)+}
 	) => {
-		impl_product_iters! {@next
-			$it $iot $cv
-			( $($ncf)* $nc ) ( $($ncl)* )
-			( $($nsl)* ) $nl
-		}
-
-		$it.$ns = $iot.$ns.clone();
-		if let Some(v) = $it.$nc.next() {
-			$cv.$nc = v;
-			$( $cv.$ncl = $it.$ncl.next()?; )*
-			return Some( (
-				$( $cv.$ncf.clone(), )*
-				$cv.$nc.clone(),
-				$( $cv.$ncl.clone(), )*
-				$it.$nl.next()?
-			) )
+		impl_product_iters!{@next
+			$it $iot $cv ($($nd)* $np) $nc ($($ny)*)
+			{ match $it.$nc.next() {
+				Some(v) => v,
+				None => {
+					$it.$nc = $iot.$nc.clone();
+					$cv.$np = $($inner)+;
+					$it.$nc.next()?
+				}
+			} }
 		}
 	};
+	// many_impl の next() のコンポーネント: 最後の成分が終わった後に呼び出せれ、生成したソースコードをそのまま返す
+	(@next
+		$it:ident $iot:ident $cv:ident
+		($($nd:tt)*) $np:tt () {$($src:tt)+}
+	) => { $($src)+ };
 }
 pub(crate) use impl_product_iters;
+
+
+
+mod for_double_ended_iters_tuple {
+	use super::*;
+
+	pub struct CartesianProduct<I,O,V,L> {
+		pub(crate) forward_iters: I,
+		pub(crate) backward_iters: I,
+		pub(crate) length: usize,
+		pub(crate) length_each: L,
+		pub(crate) forward_index: usize,
+		pub(crate) backward_index: usize,
+		pub(crate) original_iters: O,
+		pub(crate) current_val_forward: Option<V>,
+		pub(crate) current_val_backward: Option<V>
+	}
+	type Product<I,O,V,L> = CartesianProduct<I,O,V,L>;
+
+	pub trait IntoIter<I,O,V,L> {
+		fn cartesian_product(self) -> Product<I,O,V,L>;
+	}
+
+	impl<I1,I2,I3,T1,T2,T3>
+	IntoIter<Self,((),I2,I3),(T1,T2,()),(usize,usize,usize)> for (I1,I2,I3)
+	where
+		I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
+		I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
+		I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
+		T1: Clone, T2: Clone, T3: Clone
+	{
+		fn cartesian_product(self) -> Product<Self,((),I2,I3),(T1,T2,()),(usize,usize,usize)> {
+			let l = (self.0.len(),self.1.len(),self.2.len());
+			let lm =
+				Some(l.0)
+				.and_then(|m| m.checked_mul(l.1) )
+				.and_then(|m| m.checked_mul(l.2) )
+				.expect("イテレータの要素数の積が usize 型の上限値を超えるためイテレータが生成できませんでした。");
+
+			let original_iters = ((),self.1.clone(),self.2.clone());
+			let mut forward_iters = (self.0.clone(),self.1.clone(),self.2.clone());
+			let mut backward_iters = self;
+			let current_val_forward = (
+				forward_iters.0.next(),
+				forward_iters.1.next(),
+				Some(())
+			).zip_options();
+			let current_val_backward = (
+				backward_iters.0.next_back(),
+				backward_iters.1.next_back(),
+				Some(())
+			).zip_options();
+
+			Product {
+				length: lm,
+				length_each: l,
+				forward_index: 0,
+				backward_index: lm,
+				current_val_forward,
+				current_val_backward,
+				original_iters,
+				forward_iters,
+				backward_iters
+			}
+		}
+	}
+
+	impl<I1,I2,I3,T1,T2,T3>
+	Iterator for Product<(I1,I2,I3),((),I2,I3),(T1,T2,()),(usize,usize,usize)>
+	where
+		I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
+		I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
+		I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
+		T1: Clone, T2: Clone, T3: Clone
+	{
+		type Item = (T1,T2,T3);
+
+		fn next(&mut self) -> Option<Self::Item> {
+			// 末尾に達した場合や、逆方向のイテレートより後に行こうとした場合は None
+			let Self {
+				forward_index: ref fi,
+				backward_index: ref bi,
+				length: ref l,
+				..
+			} = self;
+			if (*fi+1)>=(*l) || (*fi+1)>=(*bi)
+			{ return None }
+
+			let Self {
+				forward_iters: ref mut it,
+				current_val_forward: ref mut cvo,
+				forward_index: ref mut id,
+				original_iters: ref oi,
+				length_each: ref l,
+				..
+			} = self;
+			let cv = cvo.as_mut()?;
+			*id += 1;
+			let mut i = *id;
+
+			if i%l.2==0 {
+				i /= l.2;
+				if i%l.1==0 {
+					i /= l.1;
+					if i%l.0==0 {
+						return None;
+					}
+					cv.0 = it.0.next()?;
+					it.1 = oi.1.clone();
+				}
+				cv.1 = it.1.next()?;
+				it.2 = oi.2.clone();
+			}
+
+			Some((
+				cv.0.clone(),
+				cv.1.clone(),
+				it.2.next()?
+			))
+		}
+
+		fn size_hint(&self) -> (usize, Option<usize>) {
+			(self.length,Some(self.length))
+		}
+	}
+	impl<I1,I2,I3,T1,T2,T3>
+	DoubleEndedIterator for Product<(I1,I2,I3),((),I2,I3),(T1,T2,()),(usize,usize,usize)>
+	where
+		I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
+		I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
+		I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
+		T1: Clone, T2: Clone, T3: Clone
+	{
+		fn next_back(&mut self) -> Option<Self::Item> {
+			// 先頭に達した場合や、順方向のイテレートより前に行こうとした場合は None
+			let Self {
+				forward_index: ref fi,
+				backward_index: ref bi,
+				..
+			} = self;
+			if (*bi)==0 || (*bi-1)<=(*fi)
+			{ return None }
+
+			let Self {
+				backward_iters: ref mut it,
+				current_val_backward: ref mut cvo,
+				backward_index: ref mut id,
+				original_iters: ref oi,
+				length_each: ref l,
+				..
+			} = self;
+			let cv = cvo.as_mut()?;
+			*id += 1;
+			let mut i = *id;
+
+			if i%l.2==0 {
+				i /= l.2;
+				if i%l.1==0 {
+					i /= l.1;
+					if i%l.0==0 {
+						return None;
+					}
+					cv.0 = it.0.next_back()?;
+					it.1 = oi.1.clone();
+				}
+				cv.1 = it.1.next_back()?;
+				it.2 = oi.2.clone();
+			}
+
+			Some((
+				cv.0.clone(),
+				cv.1.clone(),
+				it.2.next_back()?
+			))
+		}
+	}
+
+	impl<I1,I2,I3,T1,T2,T3>
+	ExactSizeIterator for Product<(I1,I2,I3),((),I2,I3),(T1,T2,()),(usize,usize,usize)>
+	where
+		I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
+		I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
+		I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
+		T1: Clone, T2: Clone, T3: Clone
+	{
+		fn len(&self) -> usize {
+			self.length
+		}
+	}
+
+}

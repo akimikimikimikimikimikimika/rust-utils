@@ -40,6 +40,10 @@ TODO
 	- [ ] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
 	- [ ] `CartesianProduct` の並列版を用意する
 	- [ ] 配列に対する `CartesianProduct` を用意する
+	- [ ] 作ったイテレータに対して `.nth()` や `.nth_back()` を実装する
+		- `Zip` に関しては含まれるイテレータに丸投げしたらいい
+		- `CartesianProduct` に関してはインデクスからより効率的なアルゴリズムを取り出せそう
+	- [ ] 直列版に対する `.zip_eq()` や `.zip_longest()` を用意する
 	- [ ] `unzip` を用意できればいいかな
 	- [x] `Iterator.chain` に対して複数のイテレータをチェーンする関数を用意できればいいな
 	- [ ] `permutations` や `combination` のイテレータを用意する
