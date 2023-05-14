@@ -140,13 +140,13 @@ pub(crate) use for_parallel_iters_tuple::{
 	ZipCallback as ZipCallbackForParallelIteratorsTuple
 };
 
+#[cfg(feature="parallel")]
 /// * イテレータの要素数ごとに `Zip` を実装するマクロ
 /// * `impl_zip_parallel_iters!( I0 P0 T0 0 I1 P1 T1 1 I2 P2 T2 2 ... I(N-1) P(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 /// * `I*` `P*` `T*` の異なる型パラメータとタプルのインデクスをこの順で並べていく
 macro_rules! impl_zip_parallel_iters {
 	// マクロのエントリポイント: 全ての実装をモジュールで囲む
 	( $( $i:ident $p:ident $t:ident $n:tt )+ ) => {
-		#[cfg(feature="parallel")]
 		mod impl_zip_parallel_iters {
 			use super::{
 				ZipForParallelIteratorsTuple as Zip,
@@ -391,6 +391,7 @@ macro_rules! impl_zip_parallel_iters {
 		$( ($cond) )||+
 	};
 }
+#[cfg(feature="parallel")]
 pub(crate) use impl_zip_parallel_iters;
 
 

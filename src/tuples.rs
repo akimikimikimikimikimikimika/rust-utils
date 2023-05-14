@@ -82,6 +82,7 @@ pub use tuple_to_array::*;
 
 
 mod array {
+	#[cfg(feature="iterator")]
 	use super::*;
 
 	/// インデクス付き配列を生成するトレイト
@@ -101,12 +102,14 @@ mod array {
 		}
 	}
 
+	#[cfg(feature="iterator")]
 	/// 配列のタプルからタプルの配列を生成するトレイト
 	pub trait ZipArrays<T> {
 		/// 同じ長さの固定長配列のタプル `([T1;N],[T2;N],...)` からタプルの配列 `[(T1,T2,...);N]` を生成します
 		fn zip(self) -> T;
 	}
 
+	#[cfg(feature="iterator")]
 	/// * 配列のタプルからタプルの配列を生成するトレイト `ZipArrays` の実装をまとめて行うマクロ
 	/// * `impl_zip_arrays!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	macro_rules! impl_zip_arrays {
@@ -134,6 +137,7 @@ mod array {
 		};
 		(@each | ) => {};
 	}
+	#[cfg(feature="iterator")]
 	pub(crate) use impl_zip_arrays;
 
 }

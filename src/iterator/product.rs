@@ -273,171 +273,6 @@ mod for_double_ended_iters_tuple {
 		fn cartesian_product_double_ended(self) -> Product<I,O,V,L>;
 	}
 
-	// impl<I1,I2,I3,T1,T2,T3>
-	// IntoIter<Self,((),I2,I3),(T1,T2,()),(usize,usize,usize)> for (I1,I2,I3)
-	// where
-	// 	I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
-	// 	I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
-	// 	I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
-	// 	T1: Clone, T2: Clone, T3: Clone
-	// {
-	// 	fn cartesian_product(self) -> Product<Self,((),I2,I3),(T1,T2,()),(usize,usize,usize)> {
-	// 		let l = (self.0.len(),self.1.len(),self.2.len());
-	// 		let lm =
-	// 			Some(l.0)
-	// 			.and_then(|m| m.checked_mul(l.1) )
-	// 			.and_then(|m| m.checked_mul(l.2) )
-	// 			.expect("イテレータの要素数の積が usize 型の上限値を超えるためイテレータが生成できませんでした。");
-
-	// 		let original_iters = ((),self.1.clone(),self.2.clone());
-	// 		let mut forward_iters = (self.0.clone(),self.1.clone(),self.2.clone());
-	// 		let mut backward_iters = self;
-
-	// 		let current_val_forward = (
-	// 			forward_iters.0.next(),
-	// 			forward_iters.1.next(),
-	// 			Some(())
-	// 		).zip_options();
-	// 		let current_val_backward = (
-	// 			backward_iters.0.next_back(),
-	// 			backward_iters.1.next_back(),
-	// 			Some(())
-	// 		).zip_options();
-
-	// 		let forward_index = 0_usize;
-	// 		let backward_index = lm.checked_sub(1).unwrap_or(0);
-
-	// 		Product {
-	// 			length: lm,
-	// 			length_each: l,
-	// 			forward_index,
-	// 			backward_index,
-	// 			current_val_forward,
-	// 			current_val_backward,
-	// 			original_iters,
-	// 			forward_iters,
-	// 			backward_iters
-	// 		}
-	// 	}
-	// }
-
-	// impl<I1,I2,I3,T1,T2,T3>
-	// Iterator for Product<(I1,I2,I3),((),I2,I3),(T1,T2,()),(usize,usize,usize)>
-	// where
-	// 	I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
-	// 	I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
-	// 	I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
-	// 	T1: Clone, T2: Clone, T3: Clone
-	// {
-	// 	type Item = (T1,T2,T3);
-
-	// 	fn next(&mut self) -> Option<Self::Item> {
-	// 		// 末尾に達した場合や、逆方向のイテレートより後に行こうとした場合は None
-	// 		let Self {
-	// 			forward_index: ref fi,
-	// 			backward_index: ref bi,
-	// 			length: ref l,
-	// 			..
-	// 		} = self;
-	// 		if (*fi+1)>=(*l) { return None }
-	// 		else if (*fi+1)>=(*bi) { return None }
-
-	// 		let Self {
-	// 			forward_iters: ref mut it,
-	// 			current_val_forward: ref mut cvo,
-	// 			forward_index: ref mut id,
-	// 			original_iters: ref oi,
-	// 			length_each: ref l,
-	// 			..
-	// 		} = self;
-	// 		let cv = cvo.as_mut()?;
-	// 		*id += 1;
-	// 		let mut i = *id;
-
-	// 		if i%l.2==0 {
-	// 			i /= l.2;
-	// 			if i%l.1==0 {
-	// 				i /= l.1;
-	// 				if i%l.0==0 {
-	// 					return None;
-	// 				}
-	// 				cv.0 = it.0.next()?;
-	// 				it.1 = oi.1.clone();
-	// 			}
-	// 			cv.1 = it.1.next()?;
-	// 			it.2 = oi.2.clone();
-	// 		}
-
-	// 		Some((
-	// 			cv.0.clone(),
-	// 			cv.1.clone(),
-	// 			it.2.next()?
-	// 		))
-	// 	}
-
-	// 	fn size_hint(&self) -> (usize, Option<usize>) {
-	// 		let l = length(self);
-	// 		(l,Some(l))
-	// 	}
-	// }
-	// impl<I1,I2,I3,T1,T2,T3>
-	// DoubleEndedIterator for Product<(I1,I2,I3),((),I2,I3),(T1,T2,()),(usize,usize,usize)>
-	// where
-	// 	I1: DoubleEndedIterator<Item=T1> + ExactSizeIterator + Clone,
-	// 	I2: DoubleEndedIterator<Item=T2> + ExactSizeIterator + Clone,
-	// 	I3: DoubleEndedIterator<Item=T3> + ExactSizeIterator + Clone,
-	// 	T1: Clone, T2: Clone, T3: Clone
-	// {
-	// 	fn next_back(&mut self) -> Option<Self::Item> {
-	// 		// 先頭に達した場合や、順方向のイテレートより前に行こうとした場合は None
-	// 		let Self {
-	// 			forward_index: ref fi,
-	// 			backward_index: ref bi,
-	// 			..
-	// 		} = self;
-	// 		if (*bi)==0 { return None }
-	// 		else if (*bi-1)<=(*fi) { return None }
-
-	// 		let Self {
-	// 			backward_iters: ref mut it,
-	// 			current_val_backward: ref mut cvo,
-	// 			backward_index: ref mut id,
-	// 			original_iters: ref oi,
-	// 			length_each: ref l,
-	// 			..
-	// 		} = self;
-	// 		let cv = cvo.as_mut()?;
-	// 		*id += 1;
-	// 		let mut i = *id;
-
-	// 		if i%l.2==0 {
-	// 			i /= l.2;
-	// 			if i%l.1==0 {
-	// 				i /= l.1;
-	// 				if i%l.0==0 {
-	// 					return None;
-	// 				}
-	// 				cv.0 = it.0.next_back()?;
-	// 				it.1 = oi.1.clone();
-	// 			}
-	// 			cv.1 = it.1.next_back()?;
-	// 			it.2 = oi.2.clone();
-	// 		}
-
-	// 		Some((
-	// 			cv.0.clone(),
-	// 			cv.1.clone(),
-	// 			it.2.next_back()?
-	// 		))
-	// 	}
-	// }
-
-	// fn length<I,O,V,L>(p:&Product<I,O,V,L>) -> usize {
-	// 	p.backward_index
-	// 	.checked_sub(p.forward_index)
-	// 	.map_or(0,|d| d+1 )
-	// }
-
 }
 pub use for_double_ended_iters_tuple::{
 	CartesianProduct as ProductForDoubleEndedIteratorsTuple,
@@ -472,45 +307,68 @@ macro_rules! impl_product_double_ended_iters {
 		$i0:ident $t0:ident $n0:tt
 		$( $i:ident $t:ident $n:tt )*
 	) => {
-		impl_product_double_ended_iters! {@process | $i0 $t0 $n0 | $( $i $t $n )* }
+		impl_product_double_ended_iters! {@process
+			first( $i0 $t0 $n0 ) last( )
+			mid_forward( ) mid_backward( )
+			not_yet( $( $i $t $n )* )
+		}
 	};
-	// 引数を分離するプロセス: `|` により3つに分かれた領域のうち、前の2つを残す場合と、後ろから1つずつ要素をずらした場合に分ける
-	// 1つ目の領域: impl するアイテムの末尾以外
-	// 2つ目の領域: impl するアイテムの末尾
-	// 3つ目の領域: 残りのアイテム
+	// 引数を分離するプロセス: 順方向と逆方向でアイテムを並び替える
 	(@process
-		$( $i:ident $t:ident $n:tt )* |
-		$il:ident $tl:ident $nl:tt |
-		$in:ident $tn:ident $nn:tt
-		$( $others:tt )*
+		first( $i_f:ident $t_f:ident $n_f:tt )
+		last( $( $i_l:ident $t_l:ident $n_l:tt )? )
+		mid_forward( $( $i_mf:ident $t_mf:ident $n_mf:tt )* )
+		mid_backward( $( $i_mb:ident $t_mb:ident $n_mb:tt )* )
+		not_yet(
+			$i_n:ident $t_n:ident $n_n:tt
+			$( $others:tt )*
+		)
 	) => {
 		impl_product_double_ended_iters! {@process
-			$( $i $t $n )* | $il $tl $nl |
+			first( $i_f $t_f $n_f ) last( $( $i_l $t_l $n_l )? )
+			mid_forward( $( $i_mf $t_mf $n_mf )* )
+			mid_backward( $( $i_mb $t_mb $n_mb )* )
+			not_yet( )
 		}
 		impl_product_double_ended_iters! {@process
-			$( $i $t $n )* $il $tl $nl |
-			$in $tn $nn | $( $others )*
+			first( $i_f $t_f $n_f ) last( $i_n $t_n $n_n )
+			mid_forward( $( $i_mf $t_mf $n_mf )* $( $i_l $t_l $n_l )? )
+			mid_backward( $( $i_l $t_l $n_l )? $( $i_mb $t_mb $n_mb )* )
+			not_yet( $($others)* )
 		}
 	};
 	// 引数を分離するプロセス: impl するアイテムの数が1つの場合 → 後述の one_impl に渡す
-	(@process | $i:ident $t:ident $n:tt | ) => {
+	(@process
+		first( $i:ident $t:ident $n:tt )
+		last() mid_forward() mid_backward() not_yet()
+	) => {
 		impl_product_double_ended_iters! {@one_impl}
 	};
 	// 引数を分離するプロセス: impl するアイテムの数が複数ある場合 → 引数を加工した上で後述の many_impl に渡す
 	(@process
-		$if:ident $tf:ident $nf:tt
-		$( $i:ident $t:ident $n:tt )* |
-		$il:ident $tl:ident $nl:tt |
+		first( $i_f:ident $t_f:ident $n_f:tt )
+		last( $i_l:ident $t_l:ident $n_l:tt )
+		mid_forward( $( $i_mf:ident $t_mf:ident $n_mf:tt )* )
+		mid_backward( $( $i_mb:ident $t_mb:ident $n_mb:tt )* )
+		not_yet( )
 	) => {
 		impl_product_double_ended_iters! {@many_impl
-			$if $tf $nf usize
-			$( $i $t $n usize )*
-			$il $tl $nl usize |
-			$if $tf $nf
-			$( $i $t $n )* |
-			$( $i $t $n )*
-			$il $tl $nl |
-			$nf $nl
+			forward_all(
+				$i_f $t_f $n_f usize
+				$( $i_mf $t_mf $n_mf usize )*
+				$i_l $t_l $n_l usize
+			)
+			forward_first_mid(
+				$i_f $t_f $n_f
+				$( $i_mf $t_mf $n_mf )*
+			)
+			forward_mid_last(
+				$( $i_mf $t_mf $n_mf )*
+				$i_l $t_l $n_l
+			)
+			forward_mid( $( $n_mf )* )
+			backward_mid_last( $n_l $($n_mb)* )
+			first_last( $n_f $n_l )
 		}
 	};
 
@@ -565,39 +423,60 @@ macro_rules! impl_product_double_ended_iters {
 			fn len(&self) -> usize { self.original_iters.len() }
 		}
 
+		impl<I,T> Clone for Product<(),I,(),()>
+		where
+			I: DoubleEndedIterator<Item=T> + ExactSizeIterator + Clone
+		{
+			fn clone(&self) -> Self {
+				Product {
+					forward_iters: (),
+					backward_iters: (),
+					length: 0,
+					length_each: (),
+					forward_index: 0,
+					backward_index: 0,
+					original_iters: self.original_iters.clone(),
+					current_val_forward: None,
+					current_val_backward: None
+				}
+			}
+		}
+
 	};
 
 	// イテレータが多数の場合の実装
 	(@many_impl
-		$( $ia:ident $ta:ident $na:tt $ua:ident )+ |
-		$( $ifm:ident $tfm:ident $nfm:tt )+ |
-		$( $iml:ident $tml:ident $nml:tt )+ |
-		$nf:tt $nl:tt
+		forward_all( $( $i_fa:ident $t_fa:ident $n_fa:tt $ua:ident )+ )
+		forward_first_mid( $( $i_ffm:ident $t_ffm:ident $n_ffm:tt )+ )
+		forward_mid_last( $( $i_fml:ident $t_fml:ident $n_fml:tt )+ )
+		forward_mid( $( $n_fm:tt )* )
+		backward_mid_last( $($n_bml:tt)+ )
+		first_last( $nf:tt $nl:tt )
 	) => {
 
-		impl<$($ia),+,$($ta),+>
-		IntoIter<Self,(() $(,$iml)+),($($tfm,)+ ()),($($ua,)+)> for ($($ia),+)
+		impl<$($i_fa),+,$($t_fa),+>
+		IntoIter<Self,(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)> for ($($i_fa),+)
 		where
-			$( $ia: DoubleEndedIterator<Item=$ta> + ExactSizeIterator + Clone ),+ ,
-			$( $ta: Clone, )+
+			$( $i_fa: DoubleEndedIterator<Item=$t_fa> + ExactSizeIterator + Clone ),+ ,
+			$( $t_fa: Clone ),+
 		{
-			fn cartesian_product_double_ended(self) -> Product<Self,(() $(,$iml)+),($($tfm,)+ ()),($($ua,)+)> {
-				let l = ( $( self.$na.len(), )+ );
+			fn cartesian_product_double_ended(self) -> Product<Self,(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)> {
+				let l = ( $( self.$n_fa.len(), )+ );
 				let lm =
 					Some(l.0)
-					$( .and_then(|m| m.checked_mul(l.$nml) ) )+
+					$( .and_then(|m| m.checked_mul(l.$n_fml) ) )+
 					.expect("イテレータの要素数の積が usize 型の上限値を超えるためイテレータが生成できませんでした。");
 
-				let original_iters = (() $(,self.$nml.clone())+ );
-				let mut forward_iters = ( $(self.$na.clone(),)+ );
+				let original_iters = (() $(,self.$n_fml.clone())+ );
+				let mut forward_iters = ( $(self.$n_fa.clone(),)+ );
 				let mut backward_iters = self;
 
 				let current_val_forward = (
-					$( forward_iters.$nfm.next(), )+
+					$( forward_iters.$n_ffm.next(), )+
 					Some(())
 				).zip_options();
 				let current_val_backward = (
-					$( backward_iters.$nfm.next_back(), )+
+					$( backward_iters.$n_ffm.next_back(), )+
 					Some(())
 				).zip_options();
 
@@ -615,12 +494,12 @@ macro_rules! impl_product_double_ended_iters {
 			}
 		}
 
-		impl<$($ia),+,$($ta),+> Iterator for Product<($($ia),+),(() $(,$iml)+),($($tfm,)+ ()),($($ua,)+)>
+		impl<$($i_fa),+,$($t_fa),+> Iterator for Product<($($i_fa),+),(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)>
 		where
-			$( $ia: DoubleEndedIterator<Item=$ta> + ExactSizeIterator + Clone ),+ ,
-			$( $ta: Clone, )+
+			$( $i_fa: DoubleEndedIterator<Item=$t_fa> + ExactSizeIterator + Clone ),+ ,
+			$( $t_fa: Clone ),+
 		{
-			type Item = ($($ta,)+);
+			type Item = ($($t_fa,)+);
 
 			fn next(&mut self) -> Option<Self::Item> {
 				// 末尾に達した場合や、逆方向のイテレートより後に行こうとした場合は None
@@ -644,14 +523,72 @@ macro_rules! impl_product_double_ended_iters {
 
 				if (*id) > 0 {
 					let mut i = *id;
-					impl_product_double_ended_iters!{@next next it oi cv i l ($($na)+) }
+					impl_product_double_ended_iters!{@next next it oi cv i l ($($n_fa)+) }
 				}
 
 				*id += 1;
 				Some((
-					$( cv.$nfm.clone(), )+
+					$( cv.$n_ffm.clone(), )+
 					it.$nl.next()?
 				))
+			}
+
+			fn nth(&mut self,by:usize) -> Option<Self::Item> {
+				let Self {
+					forward_index: ref mut fi,
+					backward_index: ref bi,
+					length: ref l,
+					..
+				} = self;
+
+				if (*bi-*fi) <= by {
+					*fi = *bi;
+					return None;
+				}
+				if (*l-*fi) <= by {
+					*fi = *l;
+					return None;
+				}
+
+				let i = self.forward_index;
+				let i_current = self.index_each(i);
+				let i_next = self.index_each(i+by);
+
+				let Self {
+					forward_iters: ref mut it,
+					forward_index: ref mut index,
+					original_iters: ref oi,
+					current_val_forward: ref mut cvo,
+					..
+				} = self;
+				let cv = cvo.as_mut()?;
+
+				match (i_next.$nf,i_current.$nf) {
+					(n,c) if n>c => { cv.$nf = it.$nf.nth(n-c)?; },
+					_ => {}
+				}
+				$( match (i_next.$n_fm,i_current.$n_fm) {
+					(n,c) if n>c => { cv.$n_fm = it.$n_fm.nth(n-c)?; },
+					(n,c) if n<c => {
+						it.$n_fm = oi.$n_fm.clone();
+						cv.$n_fm = it.$n_fm.nth(n)?;
+					},
+					_ => {}
+				} )*
+				let v = match (i_next.$nl,i_current.$nl) {
+					(n,c) if n>c => it.$nl.nth(n-c)?,
+					(n,_) => {
+						it.$nl = oi.$nl.clone();
+						it.$nl.nth(n)?
+					}
+				};
+
+				*index += by;
+
+				Some( (
+					$( cv.$n_ffm.clone(), )+
+					v
+				) )
 			}
 
 			fn size_hint(&self) -> (usize, Option<usize>) {
@@ -660,10 +597,10 @@ macro_rules! impl_product_double_ended_iters {
 			}
 		}
 
-		impl<$($ia),+,$($ta),+> DoubleEndedIterator for Product<($($ia),+),(() $(,$iml)+),($($tfm,)+ ()),($($ua,)+)>
+		impl<$($i_fa),+,$($t_fa),+> DoubleEndedIterator for Product<($($i_fa),+),(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)>
 		where
-			$( $ia: DoubleEndedIterator<Item=$ta> + ExactSizeIterator + Clone ),+ ,
-			$( $ta: Clone, )+
+			$( $i_fa: DoubleEndedIterator<Item=$t_fa> + ExactSizeIterator + Clone ),+ ,
+			$( $t_fa: Clone ),+
 		{
 			fn next_back(&mut self) -> Option<Self::Item> {
 				// 先頭に達した場合や、順方向のイテレートより前に行こうとした場合は None
@@ -687,30 +624,142 @@ macro_rules! impl_product_double_ended_iters {
 
 				if (*id) < (*lm) {
 					let mut i = *id;
-					impl_product_double_ended_iters!{@next next_back it oi cv i l ($($na)+) }
+					impl_product_double_ended_iters!{@next next_back it oi cv i l ($($n_fa)+) }
 				}
 
 				*id -= 1;
 				Some((
-					$( cv.$nfm.clone(), )+
+					$( cv.$n_ffm.clone(), )+
 					it.$nl.next_back()?
 				))
 			}
+
+			fn nth_back(&mut self,by:usize) -> Option<Self::Item> {
+				let Self {
+					forward_index: ref fi,
+					backward_index: ref mut bi,
+					..
+				} = self;
+
+				if (*bi-*fi) <= by {
+					*bi = *fi;
+					return None;
+				}
+				if (*bi) <= by {
+					*bi = 0;
+					return None;
+				}
+
+				let i = self.backward_index;
+				let i_current = self.index_each_back(i);
+				let i_next = self.index_each_back(i-by);
+
+				let Self {
+					backward_iters: ref mut it,
+					backward_index: ref mut index,
+					original_iters: ref oi,
+					length: ref l,
+					current_val_forward: ref mut cvo,
+					..
+				} = self;
+				let cv = cvo.as_mut()?;
+
+				match (i_next.$nf,i_current.$nf) {
+					(n,c) if n<c => { cv.$nf = it.$nf.nth_back(c-n)?; },
+					_ => {}
+				}
+				$( match (i_next.$n_fm,i_current.$n_fm) {
+					(n,c) if n<c => { cv.$n_fm = it.$n_fm.nth_back(c-n)?; },
+					(n,c) if n>c => {
+						it.$n_fm = oi.$n_fm.clone();
+						cv.$n_fm = it.$n_fm.nth_back(l-n)?;
+					},
+					_ => {}
+				} )*
+				let v = match (i_next.$nl,i_current.$nl) {
+					(n,c) if n<c => it.$nl.nth_back(c-n)?,
+					(n,_) => {
+						it.$nl = oi.$nl.clone();
+						it.$nl.nth_back(l-n)?
+					}
+				};
+
+				*index -= by;
+
+				Some( (
+					$( cv.$n_ffm.clone(), )+
+					v
+				) )
+			}
 		}
 
-		impl<$($ia),+,$($ta),+> ExactSizeIterator for Product<($($ia),+),(() $(,$iml)+),($($tfm,)+ ()),($($ua,)+)>
+		impl<$($i_fa),+,$($t_fa),+> ExactSizeIterator for Product<($($i_fa),+),(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)>
 		where
-			$( $ia: DoubleEndedIterator<Item=$ta> + ExactSizeIterator + Clone ),+ ,
-			$( $ta: Clone, )+
+			$( $i_fa: DoubleEndedIterator<Item=$t_fa> + ExactSizeIterator + Clone ),+ ,
+			$( $t_fa: Clone ),+
 		{
 			fn len(&self) -> usize {
 				length(self)
 			}
 		}
 
+		impl<$($i_fa),+,$($t_fa),+> Clone for Product<($($i_fa),+),(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)>
+		where
+			$( $i_fa: DoubleEndedIterator<Item=$t_fa> + ExactSizeIterator + Clone ),+ ,
+			$( $t_fa: Clone ),+
+		{
+			fn clone(&self) -> Self {
+				Product {
+					forward_iters: ( $(self.forward_iters.$n_fa.clone(), )+ ),
+					backward_iters: ( $(self.backward_iters.$n_fa.clone(), )+ ),
+					length: self.length,
+					length_each: self.length_each.clone(),
+					forward_index: self.forward_index,
+					backward_index: self.backward_index,
+					original_iters: ( (), $(self.original_iters.$n_fml.clone(), )+ ),
+					current_val_forward: self.current_val_forward.clone(),
+					current_val_backward: self.current_val_backward.clone()
+				}
+			}
+		}
+
+		impl<$($i_fa),+,$($t_ffm),+> Product<($($i_fa),+),(() $(,$i_fml)+),($($t_ffm,)+ ()),($($ua,)+)>
+		{
+			fn index_each(&self,mut i:usize) -> ($($ua,)+) {
+				let Self {
+					length_each: ref le,
+					..
+				} = self;
+
+				let mut ie = le.clone();
+				$(
+					ie.$n_bml = i % le.$n_bml;
+					i = i / le.$n_bml;
+				)+
+				ie.$nf = i;
+				ie
+			}
+			fn index_each_back(&self,mut i:usize) -> ($($ua,)+) {
+				let Self {
+					length: ref l,
+					length_each: ref le,
+					..
+				} = self;
+
+				let mut ie = le.clone();
+				i = l - i;
+				$(
+					ie.$n_bml = le.$n_bml - ( i % le.$n_bml );
+					i = i / le.$n_bml;
+				)+
+				ie.$nf = le.$nf - i;
+				ie
+			}
+		}
+
 	};
 
-	// many_impl の next() のコンポーネント: 先頭の成分
+	// many_impl の next() と next_back() のコンポーネント: 先頭の成分
 	(@next
 		$next:ident
 		$it:ident $oi:ident $cv:ident
@@ -725,7 +774,7 @@ macro_rules! impl_product_double_ended_iters {
 			} }
 		}
 	};
-	// many_impl の next() のコンポーネント: 先頭以外の残りの成分
+	// many_impl の next() と next_back() のコンポーネント: 先頭以外の残りの成分
 	(@next
 		$next:ident
 		$it:ident $oi:ident $cv:ident
@@ -744,7 +793,7 @@ macro_rules! impl_product_double_ended_iters {
 			} }
 		}
 	};
-	// many_impl の next() のコンポーネント: 最後の成分が終わった後に呼び出せれ、生成したソースコードをそのまま返す
+	// many_impl の next() と next_back() のコンポーネント: 最後の成分が終わった後に呼び出せれ、生成したソースコードをそのまま返す
 	(@next
 		$next:ident
 		$it:ident $oi:ident $cv:ident

@@ -19,9 +19,10 @@ macros = { path = "macros" }
 crate-type = ["rlib"]
 
 [features]
-default = ["numerics","parallel","logging","time_description"]
+default = ["numerics","iterator","parallel","logging","time_description"]
 
 numerics = ["num"]
+iterator = []
 parallel = ["rayon"]
 logging = ["log"]
 time_description = ["time", "once_cell"]
