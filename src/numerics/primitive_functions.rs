@@ -487,8 +487,8 @@ mod power {
 	}
 
 	#[inline]
-	pub fn power<B,P,R>(base:B,pow:P) -> R
-	where B: SupportsPowerOf<P,Result=R> {
+	pub fn power<B,P>(base:B,pow:P) -> <B as SupportsPowerOf<P>>::Result
+	where B: SupportsPowerOf<P> {
 		//! ## `power`
 		//! 冪乗を計算します。 `.pow()`, `.powf()`, `.powi()` など多様な冪乗の関数を一元化し、型に合わせた関数を呼び出すように実装されています。
 		//! ### 対応する型
