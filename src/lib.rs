@@ -15,3 +15,5 @@ pub use misc::*;
 
 extern crate macros;
 pub use macros::*;
+
+mod macro_expansion;

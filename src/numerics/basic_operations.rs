@@ -63,15 +63,23 @@ pub use operate_and_assign::*;
 /// `Ord` に従う型の最大/最小を多数の要素に対して実行する
 mod min_max {
 
-	/// 複数の要素の中から最大/最小を決定する
-	pub trait MinMax<T> {
-		/// 複数の要素の中から最小の値を計算します
-		fn minimum(self) -> T;
-		/// 複数の要素の中から最大の値を計算します
-		fn maximum(self) -> T;
+	/// 最大/最小に関するトレイトをまとめて定義する
+	macro_rules! trait_def {
+		( $($name:ident)+ ) => { $(
+			/// 複数の要素の中から最大/最小を決定する
+			pub trait $name<T> {
+				/// 複数の要素の中から最小の値を計算します
+				fn minimum(self) -> T;
+				/// 複数の要素の中から最大の値を計算します
+				fn maximum(self) -> T;
+			}
+		)+ };
 	}
+	trait_def!( MinMaxArray MinMaxTuple );
 
-	impl<T,I> MinMax<T> for I where I: IntoIterator<Item=T>, T: Ord {
+	impl<T,I> MinMaxArray<T> for I
+	where I: IntoIterator<Item=T>, T: Ord
+	{
 		fn minimum(self) -> T {
 			self.into_iter()
 			.reduce( |a,v| a.min(v) )
@@ -83,6 +91,29 @@ mod min_max {
 			.expect("maximizing empty slice is not allowed")
 		}
 	}
+
+	/// * タプル `(T,T,...)` の各要素に対して、最大/最小を決定するトレイト `MinMaxTuple` の実装をまとめて行うマクロ
+	/// * `impl_min_max!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! impl_min_max {
+		(indices: $($i:tt)+ ) => {
+			impl_min_max! {@each T | $($i),+ }
+		};
+		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
+			impl_min_max! {@each $t $($tx $x),* | }
+			impl_min_max! {@each $t $($tx $x,)* $t $y0 | $($y),* }
+		};
+		(@each $t:ident $($tx:ident $x:tt),* | ) => {
+			impl<$t> MinMaxTuple<$t> for ($t,$($tx),*) where $t: Ord {
+				fn minimum(self) -> $t {
+					self.0 $( .min(self.$x) )*
+				}
+				fn maximum(self) -> $t {
+					self.0 $( .max(self.$x) )*
+				}
+			}
+		};
+	}
+	pub(crate) use impl_min_max;
 
 }
 pub use min_max::*;
