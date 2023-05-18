@@ -246,3 +246,55 @@ mod evaluate_polynomials {
 
 }
 pub use evaluate_polynomials::eval_poly;
+
+
+
+/// 方程式を計算するモジュール
+mod equation {
+	use super::*;
+	use primitive_functions::*;
+
+	type C<F> = Complex<F>;
+	type C64 = C<f64>;
+	type C32 = C<f32>;
+
+	fn solve3(p:C64,q:C64,r:C64) -> [C64;3] {
+		let p3:C64 = p / 3.0;
+		let a:C64 = power(p3,3) - (p*q) / 6.0 + r / 2.0;
+		let b:C64 = power(p3,2) - q / 3.0;
+		let bs:C64 = sqrt(b);
+
+		let c = a / power(bs,3);
+		let t0 = acos(c) / 3.0;
+		(0..3).map(|n| {
+			use std::f64::consts::PI;
+			let d = ((2*n+1) as f64)/3.0 * PI;
+			let t = t0 + d;
+			cos(t) * (2.0*bs) - (p/3.0)
+		}).collect::<Vec<_>>().try_into().unwrap()
+	}
+
+	fn solve4(a:C64,b:C64,c:C64,d:C64) -> [C64;4] {
+		let p:C64 = - 3.0 / 8.0 * power(a,2) + b;
+		let q:C64 = power(a,2) / 8.0 - a * b / 2.0 + c;
+		let r:C64 = - 3.0 * power(a/4.0,4) + b * power(a/4.0,2) - a * c / 4.0 + d;
+
+		let [xs1,xs2,xs3] = solve3(2.0*p,p*p-4.0*r,-q*q);
+		let mut x1 = sqrt(xs1) / 2.0;
+		let mut x2 = sqrt(xs2) / 2.0;
+		let mut x3 = sqrt(xs3) / 2.0;
+
+		let sign = (x1*x2*x3/q).re.signum();
+		x1 *= sign;
+		x2 *= sign;
+		x3 *= sign;
+
+		[
+			(-x1) + (-x2) + (-x3),
+			(-x1) + ( x2) + ( x3),
+			( x1) + (-x2) + ( x3),
+			( x1) + ( x2) + (-x3)
+		]
+	}
+
+}
