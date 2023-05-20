@@ -39,6 +39,7 @@ TODO
 	- [ ] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
 	- [ ] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
 	- [ ] `CartesianProduct` の並列版を用意する
+	- [ ] 通常の `CartesianProduct` から double ended な `CartesianProduct` に変換できる `.into_double_ended_iter()` を用意
 	- [ ] 配列に対する `CartesianProduct` を用意する
 	- [ ] 作ったイテレータに対して `.nth()` や `.nth_back()` を実装する
 		- `Zip` に関しては含まれるイテレータに丸投げしたらいい

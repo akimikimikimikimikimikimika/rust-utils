@@ -1,3 +1,5 @@
+//! イテレータを zip するトレイトやイテレータをまとめたモジュール
+
 use super::*;
 
 /// イテレータのタプルを zip する関数を含むモジュール
@@ -311,9 +313,9 @@ macro_rules! impl_zip_parallel_iters {
 
 		impl<CCB,$in$(,$pp)*$(,$if)*,$($tp,)*$t,$tn$(,$tf)*> ProducerCallback<$t> for ZipCallback<CCB,( $(($pp,),)* (), ($in,) $(,($if,))* )>
 		where
-			CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>,
-			$( $pp: Producer<Item=$tp>, )*
-			$in: IndexedParallelIterator<Item=$tn>, $tn: Send
+			CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>
+			$(, $pp: Producer<Item=$tp> )*
+			, $in: IndexedParallelIterator<Item=$tn>, $tn: Send
 			$(, $if: IndexedParallelIterator<Item=$tf>, $tf: Send )*
 		{
 			type Output = CCB::Output;
@@ -346,7 +348,7 @@ macro_rules! impl_zip_parallel_iters {
 	) => {
 
 		impl<CCB,$($pp,)*$($tp,)*$t> ProducerCallback<$t> for ZipCallback<CCB, ( $( ($pp,), )* (), ) >
-		where CCB: ProducerCallback<($($tp,)*$t,)>, $( $pp: Producer<Item=$tp> ),*
+		where CCB: ProducerCallback<($($tp,)*$t,)> $(, $pp: Producer<Item=$tp> )*
 		{
 			type Output = CCB::Output;
 			fn callback<$p>(self, parent_producer: $p) -> Self::Output

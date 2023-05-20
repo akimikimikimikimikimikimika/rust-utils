@@ -1,3 +1,5 @@
+//! 複数のイテレータのカーテジアン積をとるトレイトやイテレータをまとめたモジュール
+
 use super::*;
 
 mod for_iters_tuple {
@@ -533,13 +535,14 @@ macro_rules! impl_product_double_ended_iters {
 				))
 			}
 
-			fn nth(&mut self,by:usize) -> Option<Self::Item> {
+			fn nth(&mut self,n:usize) -> Option<Self::Item> {
 				let Self {
 					forward_index: ref mut fi,
 					backward_index: ref bi,
 					length: ref l,
 					..
 				} = self;
+				let by = n + 1;
 
 				if (*bi-*fi) <= by {
 					*fi = *bi;
@@ -634,12 +637,13 @@ macro_rules! impl_product_double_ended_iters {
 				))
 			}
 
-			fn nth_back(&mut self,by:usize) -> Option<Self::Item> {
+			fn nth_back(&mut self,n:usize) -> Option<Self::Item> {
 				let Self {
 					forward_index: ref fi,
 					backward_index: ref mut bi,
 					..
 				} = self;
+				let by = n + 1;
 
 				if (*bi-*fi) <= by {
 					*bi = *fi;

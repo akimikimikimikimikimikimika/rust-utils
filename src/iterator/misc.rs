@@ -1,17 +1,4 @@
 use super::*;
-pub(crate) use std::iter::{
-	Iterator,
-	ExactSizeIterator,
-	DoubleEndedIterator,
-	FusedIterator
-};
-#[cfg(feature="parallel")]
-pub(crate) use rayon::iter::{
-	plumbing as rayon_plumbing,
-	ParallelIterator,
-	IndexedParallelIterator,
-	IntoParallelIterator
-};
 
 
 
