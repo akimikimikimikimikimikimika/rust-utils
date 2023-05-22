@@ -482,25 +482,16 @@ mod for_double_ended_iters_tuple {
 						.expect("イテレータの要素数の積が usize 型の上限値を超えるためイテレータが生成できませんでした。");
 
 					let original_iters = (() $(,self.$n_fml.clone())+ );
-					let mut forward_iters = ( $(self.$n_fa.clone(),)+ );
-					let mut backward_iters = self;
-
-					let current_val_forward = (
-						$( forward_iters.$n_ffm.next(), )+
-						Some(())
-					).zip_options();
-					let current_val_backward = (
-						$( backward_iters.$n_ffm.next_back(), )+
-						Some(())
-					).zip_options();
+					let forward_iters = ( $(self.$n_fa.clone(),)+ );
+					let backward_iters = self;
 
 					Product {
 						length: lm,
 						length_each: l,
 						forward_index: 0_usize,
 						backward_index: lm,
-						current_val_forward,
-						current_val_backward,
+						current_val_forward: None,
+						current_val_backward: None,
 						original_iters,
 						forward_iters,
 						backward_iters
@@ -533,13 +524,22 @@ mod for_double_ended_iters_tuple {
 						length_each: ref l,
 						..
 					} = self;
-					let cv = cvo.as_mut()?;
 
-					if (*id) > 0 {
-						let mut i = *id;
-						impl_product_double_ended_iters!{@next next it oi cv i l ($($n_fa)+) }
+					// 先頭に位置する場合は別に処理する
+					if (*id)==0 {
+						let v = ( $( it.$n_fa.next()?, )+ );
+						let cv = (
+							$( v.$n_ffm.clone(), )+
+							()
+						);
+						*cvo = Some(cv);
+						*id += 1;
+						return Some(v);
 					}
 
+					let cv = cvo.as_mut()?;
+					let mut i = *id;
+					impl_product_double_ended_iters!{@next next it oi cv i l ($($n_fa)+) }
 					*id += 1;
 					Some((
 						$( cv.$n_ffm.clone(), )+
@@ -547,26 +547,40 @@ mod for_double_ended_iters_tuple {
 					))
 				}
 
-				fn nth(&mut self,n:usize) -> Option<Self::Item> {
+				fn nth(&mut self,by:usize) -> Option<Self::Item> {
+					// 末尾に達した場合や、逆方向のイテレートより後に行こうとした場合は None
 					let Self {
 						forward_index: ref mut fi,
 						backward_index: ref bi,
 						length: ref l,
 						..
 					} = self;
-					let by = n + 1;
-
-					if (*bi-*fi) <= by {
-						*fi = *bi;
-						return None;
-					}
 					if (*l-*fi) <= by {
 						*fi = *l;
 						return None;
 					}
+					if (*bi-*fi) <= by {
+						*fi = *bi;
+						return None;
+					}
+					// 先頭に位置する場合は別に処理する
+					if (*fi)==0 {
+						let i_dst = self.index_each(by);
+						let Self {
+							forward_iters: ref mut it,
+							forward_index: ref mut id,
+							current_val_forward: ref mut cvo,
+							..
+						} = self;
+						let v = ( $( it.$n_fa.nth(i_dst.$n_fa)?, )+ );
+						let cv = ( $( v.$n_ffm.clone(), )+ () );
+						*cvo = Some(cv);
+						*id += by + 1;
+						return Some(v);
+					}
 
 					let i = self.forward_index;
-					let i_current = self.index_each(i);
+					let i_current = self.index_each(i-1);
 					let i_next = self.index_each(i+by);
 
 					let Self {
@@ -579,11 +593,11 @@ mod for_double_ended_iters_tuple {
 					let cv = cvo.as_mut()?;
 
 					match (i_next.$nf,i_current.$nf) {
-						(n,c) if n>c => { cv.$nf = it.$nf.nth(n-c)?; },
+						(n,c) if n>c => { cv.$nf = it.$nf.nth(n-c-1)?; },
 						_ => {}
 					}
 					$( match (i_next.$n_fm,i_current.$n_fm) {
-						(n,c) if n>c => { cv.$n_fm = it.$n_fm.nth(n-c)?; },
+						(n,c) if n>c => { cv.$n_fm = it.$n_fm.nth(n-c-1)?; },
 						(n,c) if n<c => {
 							it.$n_fm = oi.$n_fm.clone();
 							cv.$n_fm = it.$n_fm.nth(n)?;
@@ -591,14 +605,14 @@ mod for_double_ended_iters_tuple {
 						_ => {}
 					} )*
 					let v = match (i_next.$nl,i_current.$nl) {
-						(n,c) if n>c => it.$nl.nth(n-c)?,
+						(n,c) if n>c => it.$nl.nth(n-c-1)?,
 						(n,_) => {
 							it.$nl = oi.$nl.clone();
 							it.$nl.nth(n)?
 						}
 					};
 
-					*index += by;
+					*index += by + 1;
 
 					Some( (
 						$( cv.$n_ffm.clone(), )+
@@ -635,13 +649,22 @@ mod for_double_ended_iters_tuple {
 						length: ref lm,
 						..
 					} = self;
-					let cv = cvo.as_mut()?;
 
-					if (*id) < (*lm) {
-						let mut i = *id;
-						impl_product_double_ended_iters!{@next next_back it oi cv i l ($($n_fa)+) }
+					// 末尾に位置する場合は別に処理する
+					if (*id)==(*lm) {
+						let v = ( $( it.$n_fa.next_back()?, )+ );
+						let cv = (
+							$( v.$n_ffm.clone(), )+
+							()
+						);
+						*cvo = Some(cv);
+						*id -= 1;
+						return Some(v);
 					}
 
+					let cv = cvo.as_mut()?;
+					let mut i = *id;
+					impl_product_double_ended_iters!{@next next_back it oi cv i l ($($n_fa)+) }
 					*id -= 1;
 					Some((
 						$( cv.$n_ffm.clone(), )+
@@ -649,58 +672,72 @@ mod for_double_ended_iters_tuple {
 					))
 				}
 
-				fn nth_back(&mut self,n:usize) -> Option<Self::Item> {
+				fn nth_back(&mut self,by:usize) -> Option<Self::Item> {
+					// 先頭に達した場合や、順方向のイテレートより前に行こうとした場合は None
 					let Self {
 						forward_index: ref fi,
 						backward_index: ref mut bi,
+						length: ref l,
 						..
 					} = self;
-					let by = n + 1;
-
-					if (*bi-*fi) <= by {
-						*bi = *fi;
-						return None;
-					}
 					if (*bi) <= by {
 						*bi = 0;
 						return None;
 					}
+					if (*bi-*fi) <= by {
+						*bi = *fi;
+						return None;
+					}
+					// 末尾に位置する場合は別に処理する
+					if (*bi)==(*l) {
+						let i_dst = self.index_each_back(*l-by);
+						let Self {
+							backward_iters: ref mut it,
+							backward_index: ref mut id,
+							current_val_backward: ref mut cvo,
+							..
+						} = self;
+						let v = ( $( it.$n_fa.nth_back(i_dst.$n_fa)?, )+ );
+						let cv = ( $( v.$n_ffm.clone(), )+ () );
+						*cvo = Some(cv);
+						*id -= by + 1;
+						return Some(v);
+					}
 
 					let i = self.backward_index;
-					let i_current = self.index_each_back(i);
+					let i_current = self.index_each_back(i+1);
 					let i_next = self.index_each_back(i-by);
 
 					let Self {
 						backward_iters: ref mut it,
 						backward_index: ref mut index,
 						original_iters: ref oi,
-						length: ref l,
-						current_val_forward: ref mut cvo,
+						current_val_backward: ref mut cvo,
 						..
 					} = self;
 					let cv = cvo.as_mut()?;
 
 					match (i_next.$nf,i_current.$nf) {
-						(n,c) if n<c => { cv.$nf = it.$nf.nth_back(c-n)?; },
+						(n,c) if n>c => { cv.$nf = it.$nf.nth_back(n-c-1)?; },
 						_ => {}
 					}
 					$( match (i_next.$n_fm,i_current.$n_fm) {
-						(n,c) if n<c => { cv.$n_fm = it.$n_fm.nth_back(c-n)?; },
-						(n,c) if n>c => {
+						(n,c) if n>c => { cv.$n_fm = it.$n_fm.nth_back(n-c-1)?; },
+						(n,c) if n<c => {
 							it.$n_fm = oi.$n_fm.clone();
-							cv.$n_fm = it.$n_fm.nth_back(l-n)?;
+							cv.$n_fm = it.$n_fm.nth_back(n)?;
 						},
 						_ => {}
 					} )*
 					let v = match (i_next.$nl,i_current.$nl) {
-						(n,c) if n<c => it.$nl.nth_back(c-n)?,
+						(n,c) if n>c => it.$nl.nth_back(n-c-1)?,
 						(n,_) => {
 							it.$nl = oi.$nl.clone();
-							it.$nl.nth_back(l-n)?
+							it.$nl.nth_back(n)?
 						}
 					};
 
-					*index -= by;
+					*index -= by + 1;
 
 					Some( (
 						$( cv.$n_ffm.clone(), )+
@@ -765,10 +802,10 @@ mod for_double_ended_iters_tuple {
 					let mut ie = le.clone();
 					i = l - i;
 					$(
-						ie.$n_bml = le.$n_bml - ( i % le.$n_bml );
+						ie.$n_bml = i % le.$n_bml;
 						i = i / le.$n_bml;
 					)+
-					ie.$nf = le.$nf - i;
+					ie.$nf = i;
 					ie
 				}
 			}
