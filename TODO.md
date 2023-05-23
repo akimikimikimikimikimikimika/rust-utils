@@ -44,6 +44,8 @@ TODO
 	- [ ] 作ったイテレータに対して `.nth()` や `.nth_back()` を実装する
 		- `Zip` に関しては含まれるイテレータに丸投げしたらいい
 		- `CartesianProduct` に関してはインデクスからより効率的なアルゴリズムを取り出せそう
+	- [ ] `ExtendedMap` としてフォーマッタを実装したマップを用意する
+		- [このあたり](https://docs.rs/itertools/latest/itertools/trait.Itertools.html#method.format) を参考にしよう
 	- [ ] イテレータに `Clone` トレイトを実装する
 	- [ ] 直列版に対する `.zip_eq()` や `.zip_longest()` を用意する
 	- [ ] `unzip` を用意できればいいかな
