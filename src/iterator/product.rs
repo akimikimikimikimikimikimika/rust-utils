@@ -149,13 +149,12 @@ mod for_iters_tuple {
 			{
 				type OriginalIters = ((),$($iml),+);
 				type CurrentValues = ($($tfm),+,());
-				fn cartesian_product(mut self)
+				fn cartesian_product(self)
 				-> Product<Self,Self::OriginalIters,Self::CurrentValues>
 				{
 					Product {
 						iters_original_tuple: ((),$(self.$nml.clone()),+),
-						current_val_tuple: ($(self.$nfm.next()),+,Some(()))
-						.zip_options(),
+						current_val_tuple: None,
 						iters_tuple: self
 					}
 				}
@@ -175,13 +174,19 @@ mod for_iters_tuple {
 						iters_original_tuple: ref iot,
 						current_val_tuple: ref mut cvo,
 					} = self;
-					let cv = cvo.as_mut()?;
 
-					let last = impl_product_iters!{@next
-						it iot cv ($($na)+)
-					};
-
-					Some( ( $( cv.$nfm.clone(), )+ last ) )
+					if let Some(cv) = cvo.as_mut() {
+						let last = impl_product_iters!{@next
+							it iot cv ($($na)+)
+						};
+						Some( ( $( cv.$nfm.clone(), )+ last ) )
+					}
+					else {
+						let v = ( $( it.$na.next()?, )+ );
+						let cv = ( $( v.$nfm.clone(), )+ () );
+						*cvo = Some(cv);
+						Some(v)
+					}
 				}
 
 				fn size_hint(&self) -> (usize, Option<usize>) {

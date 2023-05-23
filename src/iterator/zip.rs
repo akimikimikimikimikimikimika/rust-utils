@@ -3,7 +3,7 @@
 use super::*;
 
 /// イテレータのタプルを zip する関数を含むモジュール
-mod for_iters_tuple {
+mod for_iters {
 
 	/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
 	pub trait IntoIter: Sized {
@@ -11,11 +11,29 @@ mod for_iters_tuple {
 		fn into_zipped_iter(self) -> Zip<Self> { self.zip() }
 		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
 		fn zip(self) -> Zip<Self>;
+		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します。要素数が一致していないとパニックを発生させます。
+		fn zip_eq(self) -> ZipEq<Self>;
 	}
 
 	/// 複数のイテレータを単一のイテレータに zip したイテレータ
-	pub struct Zip<T> {
-		pub(crate) iters_tuple: T
+	pub struct Zip<I> {
+		pub(crate) iters: I
+	}
+
+	/// 複数のイテレータを単一のイテレータに zip したイテレータ。要素数が一致していないとパニックを発する。
+	pub struct ZipEq<I> {
+		pub(crate) iters: I
+	}
+
+	/// 複数のイテレータを単一のイテレータに zip したイテレータ。先に `None` に達したイテレータがあれば、残りはデフォルト値を返していく。
+	pub struct ZipLongest<I,V> {
+		pub(crate) iters: I,
+		pub(crate) values: V
+	}
+
+	/// 要素数が合致しているか合致する内部向けトレイト
+	pub(crate) trait LenEquality {
+		fn len_equality(&self);
 	}
 
 	/// * イテレータの要素数ごとに `Zip` を実装するマクロ
@@ -27,6 +45,7 @@ mod for_iters_tuple {
 			mod impl_zip_iters {
 				use super::*;
 				use ZipForIteratorsTuple as Zip;
+				use ZipEqForIteratorsTuple as ZipEq;
 				use IntoTupleZippedIterator as IntoIter;
 
 				// `|` で要素を区切り、要素数ごとにマクロで実装を定義
@@ -44,7 +63,10 @@ mod for_iters_tuple {
 			impl<$($i),+> IntoIter for ($($i,)+)
 			where $( $i: Iterator ),+ {
 				fn zip(self) -> Zip<Self> {
-					Zip { iters_tuple: self }
+					Zip { iters: self }
+				}
+				fn zip_eq(self) -> ZipEq<Self> {
+					ZipEq { iters: self }
 				}
 			}
 
@@ -55,15 +77,44 @@ mod for_iters_tuple {
 				type Item = ( $( $i::Item, )+ );
 
 				fn next(&mut self) -> Option<Self::Item> {
-					Some( ( $( self.iters_tuple.$n.next()?, )+ ) )
+					Some( ( $( self.iters.$n.next()?, )+ ) )
 				}
 
 				fn nth(&mut self,n:usize) -> Option<Self::Item> {
-					Some( ( $( self.iters_tuple.$n.nth(n)?, )+ ) )
+					Some( ( $( self.iters.$n.nth(n)?, )+ ) )
 				}
 
 				fn size_hint(&self) -> (usize, Option<usize>) {
-					let size_hint = ( $( self.iters_tuple.$n.size_hint(), )+ );
+					let size_hint = ( $( self.iters.$n.size_hint(), )+ );
+					let l = [ $( size_hint.$n.0 ),+ ].minimum();
+					let u = [ $( size_hint.$n.1 ),+ ].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
+					(l,u)
+				}
+
+			}
+
+			impl<$($i),+> Iterator for ZipEq<($($i,)+)>
+			where $( $i: Iterator ),+
+			{
+
+				type Item = ( $( $i::Item, )+ );
+
+				fn next(&mut self) -> Option<Self::Item> {
+					impl_zip_iters!{@zip_eq
+						target( ( $(self.iters.$n.next(), )+ ) )
+						indices($($i)+)
+					}
+				}
+
+				fn nth(&mut self,n:usize) -> Option<Self::Item> {
+					impl_zip_iters!{@zip_eq
+						target( ( $(self.iters.$n.nth(n), )+ ) )
+						indices($($i)+)
+					}
+				}
+
+				fn size_hint(&self) -> (usize, Option<usize>) {
+					let size_hint = ( $( self.iters.$n.size_hint(), )+ );
 					let l = [ $( size_hint.$n.0 ),+ ].minimum();
 					let u = [ $( size_hint.$n.1 ),+ ].iter().filter_map(|x| x.as_ref()).min().map(|x| *x);
 					(l,u)
@@ -74,20 +125,51 @@ mod for_iters_tuple {
 			impl<$($i),+> ExactSizeIterator for Zip<($($i,)+)>
 			where $( $i: ExactSizeIterator ),+ {}
 
+			impl<$($i),+> ExactSizeIterator for ZipEq<($($i,)+)>
+			where $( $i: ExactSizeIterator ),+ {}
+
 			impl<$($i),+> DoubleEndedIterator for Zip<($($i,)+)>
 			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+ {
 
 				fn next_back(&mut self) -> Option<Self::Item> {
-					let size = ( $( self.iters_tuple.$n.len(), )+ );
+					let size = ( $( self.iters.$n.len(), )+ );
 					let size_min = size.to_array().minimum();
 					$( for _ in size_min..size.$n {
-						self.iters_tuple.$n.next_back();
+						self.iters.$n.next_back();
 					} )+
-					Some( ( $( self.iters_tuple.$n.next_back()?, )+ ) )
+					Some( ( $( self.iters.$n.next_back()?, )+ ) )
 				}
 
 				fn nth_back(&mut self,n:usize) -> Option<Self::Item> {
-					Some( ( $( self.iters_tuple.$n.nth_back(n)?, )+ ) )
+					let size = ( $( self.iters.$n.len(), )+ );
+					let size_min = size.to_array().minimum();
+					$( for _ in size_min..size.$n {
+						self.iters.$n.next_back();
+					} )+
+					Some( ( $( self.iters.$n.nth_back(n)?, )+ ) )
+				}
+
+			}
+
+			impl<$($i),+> DoubleEndedIterator for ZipEq<($($i,)+)>
+			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+ {
+
+				fn next_back(&mut self) -> Option<Self::Item> {
+					let size = ( $( self.iters.$n.len(), )+ );
+					let size_min = size.to_array().minimum();
+					$( for _ in size_min..size.$n {
+						self.iters.$n.next_back();
+					} )+
+					Some( ( $( self.iters.$n.next_back()?, )+ ) )
+				}
+
+				fn nth_back(&mut self,n:usize) -> Option<Self::Item> {
+					let size = ( $( self.iters.$n.len(), )+ );
+					let size_min = size.to_array().minimum();
+					$( for _ in size_min..size.$n {
+						self.iters.$n.next_back();
+					} )+
+					Some( ( $( self.iters.$n.nth_back(n)?, )+ ) )
 				}
 
 			}
@@ -100,7 +182,7 @@ mod for_iters_tuple {
 			{
 				fn clone(&self) -> Self {
 					Self {
-						iters_tuple: ( $(self.iters_tuple.$n.clone(), )+ )
+						iters: ( $(self.iters.$n.clone(), )+ )
 					}
 				}
 			}
@@ -108,21 +190,98 @@ mod for_iters_tuple {
 		};
 		// `|` の前に要素が全くない場合
 		(@each | ) => {};
+
+		// `ZipEq` の `.next()` や `.nth()` の条件分岐: エントリポイント (1つだけの場合)
+		(@zip_eq target($($t:tt)+) indices($i:tt)) => {
+			$($t)+.0.map(|v| (v,) )
+		};
+		// `ZipEq` の `.next()` や `.nth()` の条件分岐: エントリポイント
+		(@zip_eq target($($t:tt)+) indices($($i:tt)+)) => {
+			impl_zip_iters!{@zip_eq
+				target($($t)+)
+				all_some() all_none() not_yet($($i)+)
+			}
+		};
+		// `ZipEq` の `.next()` や `.nth()` の条件分岐: 各要素に対する実装
+		(@zip_eq
+			target($($t:tt)+)
+			all_some($($s:tt)*)
+			all_none($($n:tt)*)
+			$( one_none($i:tt: $($o:tt)*) )*
+			not_yet($y0:tt $($y:tt)*)
+		) => {
+			impl_zip_iters!{@zip_eq
+				target($($t)+)
+				all_some($($s)* Some(_),)
+				all_none($($n)* None,)
+				$( one_none($i: $($o)* _,) )*
+				one_none($y0: $($s)* None,)
+				not_yet($($y)*)
+			}
+		};
+		// `ZipEq` の `.next()` や `.nth()` の条件分岐: 最後に呼び出され、組み立てる
+		(@zip_eq
+			target($($t:tt)+)
+			all_some($($s:tt)+)
+			all_none($($n:tt)+)
+			$( one_none($i:tt: $($o:tt)+) )+
+			not_yet()
+		) => {
+			match $($t)+ {
+				p @ ($($s)+) => p.zip_options(),
+				($($n)+) => None,
+				$( ($($o)+) => {
+					panic!(concat!("インデクス ",stringify!($i)," の要素が空になりました"));
+				}, )+
+			}
+		};
+
+		// `ZipEq` の `next_back` と `nth_back` の条件式を用意: 要素数が1個の場合は判定なし
+		(@zip_eq_cond self 0 ) => {};
+		// `IntoIter` の `zip_eq` の条件式を用意: 要素数が複数の場合
+		(@zip_eq_cond $s:ident $($n:tt)+ ) => {
+			let l = ( $( $s.$n.len(), )+ );
+			if impl_zip_iters!{@ne l -> for $($n)+ } {
+				let src = [
+					"要素数が合致しません:".to_string(),
+					$( format!(
+						concat!("iters.",stringify!($n),".len() = {}"),
+						l.$n
+					), )+
+					String::new()
+				].join("\n");
+				panic!("{}",src);
+			}
+		};
+		// zip_eq_cond 向けの非等価性の判定
+		(@ne
+			$l:ident -> $( ($cond:expr) )*
+			for $n0:tt $n1:tt $($n:tt)*
+		) => {
+			impl_zip_parallel_iters! {@ne
+				$l -> $( ($cond) )* ($l.$n0!=$l.$n1)
+				for $n1 $($n)*
+			}
+		};
+		(@ne $l:ident -> $( ($cond:expr) )+ for $nl:tt ) => {
+			$( ($cond) )||+
+		};
 	}
 	pub(crate) use impl_zip_iters;
 
 }
-pub use for_iters_tuple::{
+pub use for_iters::{
 	Zip as ZipForIteratorsTuple,
+	ZipEq as ZipEqForIteratorsTuple,
 	IntoIter as IntoTupleZippedIterator
 };
-pub(crate) use for_iters_tuple::impl_zip_iters;
+pub(crate) use for_iters::impl_zip_iters;
 
 
 
 #[cfg(feature="parallel")]
 /// 並列イテレータのタプルを zip する関数を含むモジュール
-mod for_parallel_iters_tuple {
+mod for_parallel_iters {
 
 	/// 複数の並列イテレータのタプルをタプルのイテレータに変換するトレイト
 	pub trait IntoIter: Sized {
@@ -142,18 +301,18 @@ mod for_parallel_iters_tuple {
 	}
 
 	/// 複数の並列イテレータを単一のイテレータに zip した並列イテレータ
-	pub struct Zip<T> {
-		pub(crate) iters_tuple: T
+	pub struct Zip<I> {
+		pub(crate) iters: I
 	}
 
 	pub(crate) struct ZipCallback<CCB,PIT> {
 		pub(crate) child_callback: CCB,
 		/// * `( (P0,), (P1,), ..., (Pk-1,), (), (Ik+1,), ..., (In,) )` の形式で管理する
-		pub(crate) prods_iters_tuple: PIT
+		pub(crate) prods_iters: PIT
 	}
 
-	pub(crate) struct ZipProducer<T> {
-		pub(crate) prods_tuple: T
+	pub(crate) struct ZipProducer<P> {
+		pub(crate) producers: P
 	}
 
 	/// * イテレータの要素数ごとに `Zip` を実装するマクロ
@@ -192,7 +351,7 @@ mod for_parallel_iters_tuple {
 			where $( $i: IndexedParallelIterator ),+
 			{
 				fn zip(self) -> Zip<Self> {
-					Zip { iters_tuple: self }
+					Zip { iters: self }
 				}
 				fn zip_eq(self) -> Zip<Self> {
 					impl_zip_parallel_iters!{@zip_eq_cond self $($n)+ }
@@ -205,7 +364,7 @@ mod for_parallel_iters_tuple {
 			{
 				type ItersTuple = ( $($i::Iter,)+ );
 				fn parallel_zip(self) -> Zip<Self::ItersTuple> {
-					Zip { iters_tuple: ( $( self.$n.into_par_iter(), )+ ) }
+					Zip { iters: ( $( self.$n.into_par_iter(), )+ ) }
 				}
 			}
 
@@ -219,7 +378,7 @@ mod for_parallel_iters_tuple {
 
 				fn into_par_iter(self) -> Self::Iter {
 					Zip {
-						iters_tuple: ( $( self.iters_tuple.$n.into_par_iter(), )+ )
+						iters: ( $( self.iters.$n.into_par_iter(), )+ )
 					}
 				}
 			}
@@ -235,7 +394,7 @@ mod for_parallel_iters_tuple {
 				{ bridge(self,child_consumer) }
 
 				fn opt_len(&self) -> Option<usize> {
-					( $( self.iters_tuple.$n.opt_len(), )+ )
+					( $( self.iters.$n.opt_len(), )+ )
 					.zip_options()
 					.map(|t| t.minimum() )
 				}
@@ -250,29 +409,29 @@ mod for_parallel_iters_tuple {
 
 				fn into_iter(self) -> Self::IntoIter {
 					( $(
-						self.prods_tuple.$n.into_iter(),
+						self.producers.$n.into_iter(),
 					)+ ).into_zipped_iter()
 				}
 
 				fn min_len(&self) -> usize {
 					( $(
-						self.prods_tuple.$n.min_len(),
+						self.producers.$n.min_len(),
 					)+ ).minimum()
 				}
 
 				fn max_len(&self) -> usize {
 					( $(
-						self.prods_tuple.$n.max_len(),
+						self.producers.$n.max_len(),
 					)+ ).maximum()
 				}
 
 				fn split_at(self, index: usize) -> (Self, Self) {
 					let split_prod = ( $(
-						self.prods_tuple.$n.split_at(index),
+						self.producers.$n.split_at(index),
 					)+ );
 					(
-						Self { prods_tuple: ( $(split_prod.$n.0,)+ ) },
-						Self { prods_tuple: ( $(split_prod.$n.1,)+ ) }
+						Self { producers: ( $(split_prod.$n.0,)+ ) },
+						Self { producers: ( $(split_prod.$n.1,)+ ) }
 					)
 				}
 
@@ -302,8 +461,8 @@ mod for_parallel_iters_tuple {
 
 				fn len(&self) -> usize {
 					(
-						self.iters_tuple.$n.len(),
-						$( self.iters_tuple.$nf.len(), )*
+						self.iters.$n.len(),
+						$( self.iters.$nf.len(), )*
 					)
 					.minimum()
 				}
@@ -311,10 +470,10 @@ mod for_parallel_iters_tuple {
 				fn with_producer<CCB>(self, child_callback: CCB) -> CCB::Output
 				where CCB: ProducerCallback<Self::Item>
 				{
-					self.iters_tuple.$n.with_producer(ZipCallback {
+					self.iters.$n.with_producer(ZipCallback {
 						child_callback,
-						prods_iters_tuple: (
-							(), $( (self.iters_tuple.$nf,), )*
+						prods_iters: (
+							(), $( (self.iters.$nf,), )*
 						)
 					})
 				}
@@ -343,13 +502,13 @@ mod for_parallel_iters_tuple {
 				fn callback<$p>(self, parent_producer: $p) -> Self::Output
 				where $p: Producer<Item=$t>
 				{
-					self.prods_iters_tuple.$nn.0.with_producer(ZipCallback {
+					self.prods_iters.$nn.0.with_producer(ZipCallback {
 						child_callback: self.child_callback,
-						prods_iters_tuple: (
-							$( (self.prods_iters_tuple.$np.0,), )*
+						prods_iters: (
+							$( (self.prods_iters.$np.0,), )*
 							(parent_producer,),
 							(),
-							$( (self.prods_iters_tuple.$nf.0,), )*
+							$( (self.prods_iters.$nf.0,), )*
 						)
 					})
 				}
@@ -376,7 +535,7 @@ mod for_parallel_iters_tuple {
 				where $p: Producer<Item=$t>
 				{
 					self.child_callback.callback(ZipProducer {
-						prods_tuple: ( $(self.prods_iters_tuple.$np.0,)* parent_producer, )
+						producers: ( $(self.prods_iters.$np.0,)* parent_producer, )
 					})
 				}
 			}
@@ -418,13 +577,13 @@ mod for_parallel_iters_tuple {
 
 }
 #[cfg(feature="parallel")]
-pub use for_parallel_iters_tuple::{
+pub use for_parallel_iters::{
 	Zip as ZipForParallelIteratorsTuple,
 	IntoIter as IntoTupleZippedParallelIterator,
 	ParallelIntoIter as IntoTupleZippedParallelIteratorFromIntoParallelIterator
 };
 #[cfg(feature="parallel")]
-pub(crate) use for_parallel_iters_tuple::{
+pub(crate) use for_parallel_iters::{
 	ZipProducer as ZipProducerForParallelIteratorsTuple,
 	ZipCallback as ZipCallbackForParallelIteratorsTuple,
 	impl_zip_parallel_iters
