@@ -871,7 +871,8 @@ mod parser {
 
 			/// 現在のパースの過程を表す型
 			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
+				Beginning,
+				GotAttrHash, GotAttrExclamation, GotAttrBody,
 				GotFieldName, GotFieldValue,
 				GotEqual, GotDefault,
 				GotEnclosedType, GotEnclosedHeader, GotEnclosedBody,
@@ -1022,7 +1023,8 @@ mod parser {
 
 			/// 現在のパースの過程を表す型
 			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
+				Beginning,
+				GotAttrHash, GotAttrExclamation, GotAttrBody,
 				GotPub, GotVisibility,
 				GotType, GotEqual, GotDefaultVal,
 				GotSubValType, GotSubValHeader, GotSubValBody,
@@ -1235,7 +1237,8 @@ mod parser {
 
 			/// 現在のパースの過程を表す型
 			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
+				Beginning,
+				GotAttrHash, GotAttrExclamation, GotAttrBody,
 				GotPub, GotVisibility,
 				GotName, GotColon, GotType,
 				GotEqual, GotDefaultVal,
@@ -1697,7 +1700,7 @@ mod modification {
 			self.check_default();
 
 			let Self {
-				ref mut attributes,
+				ref attributes,
 				ref mut value,
 				ref visibility,
 				..
@@ -1717,7 +1720,7 @@ mod modification {
 			self.check_default();
 
 			let Self {
-				ref mut attributes,
+				ref attributes,
 				ref mut value,
 				ref visibility,
 				..
@@ -2036,8 +2039,8 @@ mod modification {
 		*vis_child = vis.clone();
 	}
 
-	/// 構造体のフィールドに付されたアトリビュートを、値となるサブ構造体/列挙体に移動或いはコピーする
-	fn move_field_attrs_to_subtype(pal:&mut Vec<Attr>,value:&mut FieldValue) {
+	/// 構造体のフィールドに付されたアトリビュート (`doc`/`cfg`) を、値となるサブ構造体/列挙体に移動或いはコピーする
+	fn move_field_attrs_to_subtype(pal:&Vec<Attr>,value:&mut FieldValue) {
 		let mut tmp = pal.iter()
 		.filter_map(|a| {
 			match a {
@@ -2046,7 +2049,6 @@ mod modification {
 			}
 		})
 		.collect::<Vec<_>>();
-		swap(pal,&mut tmp);
 		let cal = match value.get_subtype() {
 			None => { return },
 			Some(Data::Struct(s)) => &mut s.attributes,
