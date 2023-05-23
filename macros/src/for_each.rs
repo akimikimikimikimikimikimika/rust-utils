@@ -268,10 +268,10 @@ mod typedef {
 		},
 		/// NDArray に準拠したインデクスを与えます
 		IndexFromNdArray,
-		/// 任意のイテレータをイテレートします
-		Each,
-		/// NDArray をイテレートします
-		EachNd {
+		/// 配列をイテレートします
+		Each {
+			/// NDArray の場合は true 、一般の配列の場合は false
+			nd: bool,
 			/// ミュータブルなイテレートか
 			mutable: bool,
 			/// `var` を参照外しするかどうか
@@ -311,7 +311,7 @@ mod typedef {
 	}
 	pub type RO = ReductionOperator;
 
-	#[derive(Clone,Copy)]
+	#[derive(Clone,Copy,PartialEq,Eq)]
 	/// リダクションの仕方
 	pub enum ReductionMode {
 		/// リダクションを行わない
@@ -323,7 +323,7 @@ mod typedef {
 	}
 	pub type RM = ReductionMode;
 
-	#[derive(Clone,Copy)]
+	#[derive(Clone,Copy,PartialEq,Eq)]
 	/// 実行モード
 	pub enum ExecutionMode {
 		/// 並列
@@ -616,6 +616,12 @@ mod input {
 
 				Some(())
 			})
+			// each($array)
+			// $var = each($array)
+			// each(mut $array)
+			// $var = each(mut $array)
+			// mut each($array)
+			// $var = mut each($array)
 			// each_nd($array)
 			// $var = each_nd($array)
 			// each_nd(mut $array)
@@ -623,12 +629,13 @@ mod input {
 			// mut each_nd($array)
 			// $var = mut each_nd($array)
 			.or_else(|| {
-				let mut mutable = false;
-				match &p.name[..] {
-					"each_nd" => {},
-					"mut each_nd" => { mutable = true; },
+				let (nd,mut mutable) = match &p.name[..] {
+					"each" => (false,false),
+					"mut each" => (false,true),
+					"each_nd" => (true,false),
+					"mut each_nd" => (true,true),
 					_ => { return None; }
-				}
+				};
 
 				let cmf = check_mut_flag(p.args.clone());
 				if cmf.0 && !mutable { mutable = true; }
@@ -654,7 +661,7 @@ mod input {
 				let array = parse2::<Expr>(cmf.1).ok()?;
 
 				self.args.push(
-					Arg::EachNd { mutable, dereference, var, array }
+					Arg::Each { nd, mutable, dereference, var, array }
 				);
 
 				Some(())
@@ -1106,18 +1113,17 @@ mod converted {
 					self.iterators.push(iter);
 					self.lambda_args.push(var.to_token_stream());
 				},
-				Arg::EachNd {mutable,dereference,var,array} => {
-					let iter = match (self.execution,mutable) {
-						(EM::Parallel,false) => {
-							self.use_into_parallel_iterator = true;
-							quote!( (#array).as_slice().unwrap().into_par_iter() )
-						},
-						(EM::Parallel,true) => {
-							self.use_into_parallel_iterator = true;
-							quote!( (#array).as_slice_mut().unwrap().into_par_iter() )
-						},
-						(_,false) => quote!( (#array).iter() ),
-						(_,true) => quote!( (#array).iter_mut() )
+				Arg::Each {nd,mutable,dereference,var,array} => {
+					if self.execution==EM::Parallel {
+						self.use_into_parallel_iterator = true;
+					}
+					let iter = match (self.execution,nd,mutable) {
+						(EM::Parallel,false,false) => quote!( (#array).as_slice().into_par_iter() ),
+						(EM::Parallel,false,true) => quote!( (#array).as_mut_slice().into_par_iter() ),
+						(EM::Parallel,true,false) => quote!( (#array).as_slice().unwrap().into_par_iter() ),
+						(EM::Parallel,true,true) => quote!( (#array).as_slice_mut().unwrap().into_par_iter() ),
+						(_,_,false) => quote!( (#array).iter() ),
+						(_,_,true) => quote!( (#array).iter_mut() )
 					};
 
 					let la = match (mutable,dereference) {
