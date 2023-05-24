@@ -36,7 +36,8 @@ TODO
 		- [ ] リストの項目を1つずつ増やしながら呼び出す `macro_dup!` を実装
 - イテレータ関連
 	- [ ] 配列型の `Zip` に対して並列版を用意する
-	- [ ] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
+	- [x] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
+	- [ ] 直列、並列ともに `zip_longest` を実装する
 	- [ ] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
 	- [ ] `CartesianProduct` の並列版を用意する
 	- [ ] 通常の `CartesianProduct` から double ended な `CartesianProduct` に変換できる `.into_double_ended_iter()` を用意

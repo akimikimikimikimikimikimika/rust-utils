@@ -31,11 +31,6 @@ mod for_iters {
 		pub(crate) values: V
 	}
 
-	/// 要素数が合致しているか合致する内部向けトレイト
-	pub(crate) trait LenEquality {
-		fn len_equality(&self);
-	}
-
 	/// * イテレータの要素数ごとに `Zip` を実装するマクロ
 	/// * `impl_zip_iters!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	/// * 異なる型パラメータとタプルのインデクスを交互に並べる
@@ -155,20 +150,12 @@ mod for_iters {
 			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+ {
 
 				fn next_back(&mut self) -> Option<Self::Item> {
-					let size = ( $( self.iters.$n.len(), )+ );
-					let size_min = size.to_array().minimum();
-					$( for _ in size_min..size.$n {
-						self.iters.$n.next_back();
-					} )+
+					( $( self.iters.$n.len(), )+ ).len_equality();
 					Some( ( $( self.iters.$n.next_back()?, )+ ) )
 				}
 
 				fn nth_back(&mut self,n:usize) -> Option<Self::Item> {
-					let size = ( $( self.iters.$n.len(), )+ );
-					let size_min = size.to_array().minimum();
-					$( for _ in size_min..size.$n {
-						self.iters.$n.next_back();
-					} )+
+					( $( self.iters.$n.len(), )+ ).len_equality();
 					Some( ( $( self.iters.$n.nth_back(n)?, )+ ) )
 				}
 
@@ -178,6 +165,16 @@ mod for_iters {
 			where $( $i: FusedIterator ),+ {}
 
 			impl<$($i),+> Clone for Zip<($($i,)+)>
+			where $( $i: Iterator + Clone ),+
+			{
+				fn clone(&self) -> Self {
+					Self {
+						iters: ( $(self.iters.$n.clone(), )+ )
+					}
+				}
+			}
+
+			impl<$($i),+> Clone for ZipEq<($($i,)+)>
 			where $( $i: Iterator + Clone ),+
 			{
 				fn clone(&self) -> Self {
@@ -234,37 +231,6 @@ mod for_iters {
 					panic!(concat!("インデクス ",stringify!($i)," の要素が空になりました"));
 				}, )+
 			}
-		};
-
-		// `ZipEq` の `next_back` と `nth_back` の条件式を用意: 要素数が1個の場合は判定なし
-		(@zip_eq_cond self 0 ) => {};
-		// `IntoIter` の `zip_eq` の条件式を用意: 要素数が複数の場合
-		(@zip_eq_cond $s:ident $($n:tt)+ ) => {
-			let l = ( $( $s.$n.len(), )+ );
-			if impl_zip_iters!{@ne l -> for $($n)+ } {
-				let src = [
-					"要素数が合致しません:".to_string(),
-					$( format!(
-						concat!("iters.",stringify!($n),".len() = {}"),
-						l.$n
-					), )+
-					String::new()
-				].join("\n");
-				panic!("{}",src);
-			}
-		};
-		// zip_eq_cond 向けの非等価性の判定
-		(@ne
-			$l:ident -> $( ($cond:expr) )*
-			for $n0:tt $n1:tt $($n:tt)*
-		) => {
-			impl_zip_parallel_iters! {@ne
-				$l -> $( ($cond) )* ($l.$n0!=$l.$n1)
-				for $n1 $($n)*
-			}
-		};
-		(@ne $l:ident -> $( ($cond:expr) )+ for $nl:tt ) => {
-			$( ($cond) )||+
 		};
 	}
 	pub(crate) use impl_zip_iters;
@@ -354,7 +320,7 @@ mod for_parallel_iters {
 					Zip { iters: self }
 				}
 				fn zip_eq(self) -> Zip<Self> {
-					impl_zip_parallel_iters!{@zip_eq_cond self $($n)+ }
+					( $( self.$n.len(), )+ ).len_equality();
 					self.zip()
 				}
 			}
@@ -541,37 +507,6 @@ mod for_parallel_iters {
 			}
 
 		};
-
-		// `IntoIter` の `zip_eq` の条件式を用意: 要素数が1個の場合は判定なし
-		(@zip_eq_cond self 0 ) => {};
-		// `IntoIter` の `zip_eq` の条件式を用意: 要素数が複数の場合
-		(@zip_eq_cond $s:ident $($n:tt)+ ) => {
-			let l = ( $( $s.$n.len(), )+ );
-			if impl_zip_parallel_iters!{@ne l -> for $($n)+ } {
-				let src = [
-					"要素数が合致しません:".to_string(),
-					$( format!(
-						concat!("iters.",stringify!($n),".len() = {}"),
-						l.$n
-					), )+
-					String::new()
-				].join("\n");
-				panic!("{}",src);
-			}
-		};
-		// zip_eq_cond 向けの非等価性の判定
-		(@ne
-			$l:ident -> $( ($cond:expr) )*
-			for $n0:tt $n1:tt $($n:tt)*
-		) => {
-			impl_zip_parallel_iters! {@ne
-				$l -> $( ($cond) )* ($l.$n0!=$l.$n1)
-				for $n1 $($n)*
-			}
-		};
-		(@ne $l:ident -> $( ($cond:expr) )+ for $nl:tt ) => {
-			$( ($cond) )||+
-		};
 	}
 	pub(crate) use impl_zip_parallel_iters;
 
@@ -589,6 +524,84 @@ pub(crate) use for_parallel_iters::{
 	impl_zip_parallel_iters
 };
 
+
+
+/// `ZipEq` 向けの `len_equality` 関数を提供するモジュール
+mod len_equality {
+
+	/// 要素数が合致しているか合致する内部向けトレイト。合致しない場合はパニックを発する。
+	pub(crate) trait LenEquality {
+		fn len_equality(self);
+	}
+
+	/// `len_equality` をまとめて定義するマクロ
+	macro_rules! impl_len_equality {
+		// マクロのエントリポイント: 全ての実装をモジュールで囲む
+		(indices: $($n:tt)+ ) => {
+			mod len_equality {
+				use super::*;
+				use ZipEqLenEquality as LenEquality;
+
+				impl_len_equality! {@each | $( usize $n )+ }
+			}
+		};
+		// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
+		(@each
+			$( $up:ident $np:tt )* |
+			$uc:ident $nc:tt $( $un:ident $nn:tt )*
+		) => {
+			impl_len_equality!{@each $( $up $np )* | }
+			impl_len_equality!{@each $( $up $np )* $uc $nc | $( $un $nn )* }
+		};
+		// `|` の前に1つだけ要素がある場合
+		(@each usize 0 | ) => {
+			impl LenEquality for (usize,) {
+				fn len_equality(self) {}
+			}
+		};
+		// 全ての要素が `|` より前にある場合に実装を行う
+		(@each $( $u:ident $n:tt )+ | ) => {
+			impl LenEquality for ($($u,)+) {
+				fn len_equality(self) {
+					if impl_len_equality!{@ne self -> for $($n)+ } {
+						let src = [
+							"要素数が合致しません:".to_string(),
+							$( format!(
+								concat!("iters.",stringify!($n),".len() = {}"),
+								self.$n
+							), )+
+							String::new()
+						].join("\n");
+						panic!("{}",src);
+					}
+				}
+			}
+		};
+		// `|` の前に要素が全くない場合
+		(@each | ) => {};
+
+		// 非等価性の判定: 要素を2つずつ取ってまとめていく
+		(@ne
+			$s:ident -> $( ($cond:expr) )*
+			for $n0:tt $n1:tt $($n:tt)*
+		) => {
+			impl_len_equality! {@ne
+				$s -> $( ($cond) )* ($s.$n0!=$s.$n1)
+				for $n1 $($n)*
+			}
+		};
+		// 非等価性の判定: 2要素のペアを全て作り終えたらそれを1つに繋げる
+		(@ne $s:ident -> $( ($cond:expr) )+ for $nl:tt ) => {
+			$( ($cond) )||+
+		};
+	}
+	pub(crate) use impl_len_equality;
+
+}
+pub(crate) use len_equality::{
+	LenEquality as ZipEqLenEquality,
+	impl_len_equality
+};
 
 
 
