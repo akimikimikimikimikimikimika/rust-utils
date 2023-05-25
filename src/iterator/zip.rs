@@ -6,13 +6,20 @@ use super::*;
 mod for_iters {
 
 	/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
-	pub trait IntoIter: Sized {
+	pub trait IntoZip: Sized {
 		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
 		fn into_zipped_iter(self) -> Zip<Self> { self.zip() }
 		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します
 		fn zip(self) -> Zip<Self>;
 		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します。要素数が一致していないとパニックを発生させます。
 		fn zip_eq(self) -> ZipEq<Self>;
+	}
+
+	pub trait IntoZipLongest: Sized {
+		type Item;
+		type Iter;
+		/// イテレータのタプル `(I1,I2,I3,...)` をタプルのイテレータ `Iterator<Item=(T1,T2,T3,...)>` に変換します。要素数が一致しておらず、先に末尾に達したイテレータはデフォルト値を返します。
+		fn zip_longest(self,default:Self::Item) -> Self::Iter;
 	}
 
 	/// 複数のイテレータを単一のイテレータに zip したイテレータ
@@ -36,26 +43,35 @@ mod for_iters {
 	/// * 異なる型パラメータとタプルのインデクスを交互に並べる
 	macro_rules! impl_zip_iters {
 		// マクロのエントリポイント: 全ての実装をモジュールで囲む
-		( $( $i:ident $n:tt )+ ) => {
+		( $( $i:ident $t:ident $n:tt )+ ) => {
 			mod impl_zip_iters {
 				use super::*;
-				use ZipForIteratorsTuple as Zip;
-				use ZipEqForIteratorsTuple as ZipEq;
-				use IntoTupleZippedIterator as IntoIter;
+				use std::sync::Arc;
+				use ZipForIterators as Zip;
+				use ZipEqForIterators as ZipEq;
+				use ZipLongestForIterators as ZipLongest;
+				use IntoZipForIterators as IntoZip;
+				use IntoZipLongestForIterators as IntoZipLongest;
+
+				/// 内部からのみアクセス可能で `ZipLongest` 向けの実装を提供する `Iterator` トレイトと同じメソッドを持つ構造体
+				struct ZLImpl<I,V> {
+					iters: I,
+					values: V
+				}
 
 				// `|` で要素を区切り、要素数ごとにマクロで実装を定義
-				impl_zip_iters! {@each | $( $i $n )+ }
+				impl_zip_iters! {@each | $( $i $t $n )+ }
 			}
 		};
 		// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
-		(@each $( $i:ident $n:tt )* | $in:ident $nn:tt $( $others:tt )* ) => {
-			impl_zip_iters! {@each $( $i $n )* | }
-			impl_zip_iters! {@each $( $i $n )* $in $nn | $( $others )* }
+		(@each $( $i:ident $t:ident $n:tt )* | $in:ident $tn:ident $nn:tt $( $others:tt )* ) => {
+			impl_zip_iters! {@each $( $i $t $n )* | }
+			impl_zip_iters! {@each $( $i $t $n )* $in $tn $nn | $( $others )* }
 		};
 		// 全ての要素が `|` より前にある場合に実装を行う
-		(@each $( $i:ident $n:tt )+ | ) => {
+		(@each $( $i:ident $t:ident $n:tt )+ | ) => {
 
-			impl<$($i),+> IntoIter for ($($i,)+)
+			impl<$($i),+> IntoZip for ($($i,)+)
 			where $( $i: Iterator ),+ {
 				fn zip(self) -> Zip<Self> {
 					Zip { iters: self }
@@ -65,11 +81,24 @@ mod for_iters {
 				}
 			}
 
-			impl<$($i),+> Iterator for Zip<($($i,)+)>
-			where $( $i: Iterator ),+
+			impl<$($i),+,$($t),+> IntoZipLongest for ($($i,)+)
+			where $( $i: Iterator<Item=$t>, $t: Clone ),+ {
+				type Item = ( $( $t, )+ );
+				type Iter = ZipLongest<Self,Self::Item>;
+
+				fn zip_longest(self,default:Self::Item) -> Self::Iter {
+					Self::Iter {
+						iters: self,
+						values: default
+					}
+				}
+			}
+
+			impl<$($i),+,$($t),+> Iterator for Zip<($($i,)+)>
+			where $( $i: Iterator<Item=$t> ),+
 			{
 
-				type Item = ( $( $i::Item, )+ );
+				type Item = ( $( $t, )+ );
 
 				fn next(&mut self) -> Option<Self::Item> {
 					Some( ( $( self.iters.$n.next()?, )+ ) )
@@ -88,11 +117,11 @@ mod for_iters {
 
 			}
 
-			impl<$($i),+> Iterator for ZipEq<($($i,)+)>
-			where $( $i: Iterator ),+
+			impl<$($i),+,$($t),+> Iterator for ZipEq<($($i,)+)>
+			where $( $i: Iterator<Item=$t> ),+
 			{
 
-				type Item = ( $( $i::Item, )+ );
+				type Item = ( $( $t, )+ );
 
 				fn next(&mut self) -> Option<Self::Item> {
 					impl_zip_iters!{@zip_eq
@@ -117,14 +146,79 @@ mod for_iters {
 
 			}
 
+			impl<$($i),+,$($t),+> Iterator for ZipLongest<($($i,)+),($($t,)+)>
+			where $( $i: Iterator<Item=$t>, $t: Clone ),+
+			{
+				type Item = ( $($t,)+ );
+
+				fn next(&mut self) -> Option<Self::Item> {
+					ZLImpl { iters: &mut self.iters, values: &self.values }
+					.next()
+				}
+
+				fn size_hint(&self) -> (usize,Option<usize>) {
+					ZLImpl { iters: &self.iters, values: &self.values }
+					.size_hint()
+				}
+			}
+
+			// 並列の `ZipLongest` 向けにデフォルト値のタプルを `Arc` にしたイテレータも用意
+			// 機能としては `Arc` のない場合と全く同じ
+			// `Arc` がある場合とない場合の両方に対応するために `ZLImpl` という内部構造体を使用している
+			impl<$($i),+,$($t),+> Iterator for ZipLongest<($($i,)+),Arc<($($t,)+)>>
+			where $( $i: Iterator<Item=$t>, $t: Clone + Send + Sync ),+
+			{
+				type Item = ( $($t,)+ );
+
+				fn next(&mut self) -> Option<Self::Item> {
+					ZLImpl { iters: &mut self.iters, values: &*self.values }
+					.next()
+				}
+
+				fn size_hint(&self) -> (usize,Option<usize>) {
+					ZLImpl { iters: &self.iters, values: &*self.values }
+					.size_hint()
+				}
+			}
+
+			impl<'a,$($i),+,$($t),+> ZLImpl<&'a mut ($($i,)+),&'a ($($t,)+)>
+			where $( $i: Iterator<Item=$t>, $t: Clone ),+
+			{
+				fn next(&mut self) -> Option<($($t,)+)> {
+					let t = ( $( self.iters.$n.next(), )+ );
+					if matches!(t,impl_zip_iters!{@repeat $( $n None )+ }) { return None; }
+					Some( ( $(
+						t.$n.unwrap_or_else(|| self.values.$n.clone() ),
+					)+ ) )
+				}
+			}
+
+			impl<'a,$($i),+,$($t),+> ZLImpl<&'a ($($i,)+),&'a ($($t,)+)>
+			where $( $i: Iterator<Item=$t>, $t: Clone ),+
+			{
+				fn size_hint(&self) -> (usize,Option<usize>) {
+					let size_hint = ( $( self.iters.$n.size_hint(), )+ );
+					let l = [ $( size_hint.$n.0 ),+ ].minimum();
+					let u = [ $( size_hint.$n.1 ),+ ].iter().filter_map(|x| x.as_ref()).max().map(|x| *x);
+					(l,u)
+				}
+			}
+
 			impl<$($i),+> ExactSizeIterator for Zip<($($i,)+)>
 			where $( $i: ExactSizeIterator ),+ {}
 
 			impl<$($i),+> ExactSizeIterator for ZipEq<($($i,)+)>
 			where $( $i: ExactSizeIterator ),+ {}
 
+			impl<$($i),+,$($t,)+> ExactSizeIterator for ZipLongest<($($i,)+),($($t,)+)>
+			where $( $i: ExactSizeIterator<Item=$t>, $t: Clone ),+ {}
+
+			impl<$($i),+,$($t,)+> ExactSizeIterator for ZipLongest<($($i,)+),Arc<($($t,)+)>>
+			where $( $i: ExactSizeIterator<Item=$t>, $t: Clone + Send + Sync ),+ {}
+
 			impl<$($i),+> DoubleEndedIterator for Zip<($($i,)+)>
-			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+ {
+			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+
+			{
 
 				fn next_back(&mut self) -> Option<Self::Item> {
 					let size = ( $( self.iters.$n.len(), )+ );
@@ -147,7 +241,8 @@ mod for_iters {
 			}
 
 			impl<$($i),+> DoubleEndedIterator for ZipEq<($($i,)+)>
-			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+ {
+			where $( $i: DoubleEndedIterator + ExactSizeIterator ),+
+			{
 
 				fn next_back(&mut self) -> Option<Self::Item> {
 					( $( self.iters.$n.len(), )+ ).len_equality();
@@ -161,15 +256,53 @@ mod for_iters {
 
 			}
 
+			impl<$($i),+,$($t,)+> DoubleEndedIterator for ZipLongest<($($i,)+),($($t,)+)>
+			where $( $i: DoubleEndedIterator<Item=$t> + ExactSizeIterator, $t: Clone ),+
+			{
+				fn next_back(&mut self) -> Option<Self::Item> {
+					ZLImpl { iters: &mut self.iters, values: &self.values }
+					.next_back()
+				}
+			}
+
+			impl<$($i),+,$($t,)+> DoubleEndedIterator for ZipLongest<($($i,)+),Arc<($($t,)+)>>
+			where $( $i: DoubleEndedIterator<Item=$t> + ExactSizeIterator, $t: Clone + Send + Sync ),+
+			{
+				fn next_back(&mut self) -> Option<Self::Item> {
+					ZLImpl { iters: &mut self.iters, values: &*self.values }
+					.next_back()
+				}
+			}
+
+			impl<'a,$($i),+,$($t),+> ZLImpl<&'a mut ($($i,)+),&'a ($($t,)+)>
+			where $( $i: DoubleEndedIterator<Item=$t> + ExactSizeIterator, $t: Clone ),+
+			{
+				fn next_back(&mut self) -> Option<($($t,)+)> {
+					let len = ( $( self.iters.$n.len(), )+ );
+					let lm = len.maximum();
+					if lm==0 { return None; }
+					Some( ( $(
+						if len.$n<lm { self.values.$n.clone() }
+						else { self.iters.$n.next_back()? }
+					,)+ ) )
+				}
+			}
+
 			impl<$($i),+> FusedIterator for Zip<($($i,)+)>
 			where $( $i: FusedIterator ),+ {}
+
+			impl<$($i),+> FusedIterator for ZipEq<($($i,)+)>
+			where $( $i: FusedIterator ),+ {}
+
+			impl<$($i),+,$($t),+> FusedIterator for ZipLongest<($($i,)+),($($t,)+)>
+			where $( $i: FusedIterator<Item=$t>, $t: Clone ),+ {}
 
 			impl<$($i),+> Clone for Zip<($($i,)+)>
 			where $( $i: Iterator + Clone ),+
 			{
 				fn clone(&self) -> Self {
 					Self {
-						iters: ( $(self.iters.$n.clone(), )+ )
+						iters: ( $( self.iters.$n.clone(), )+ )
 					}
 				}
 			}
@@ -179,7 +312,18 @@ mod for_iters {
 			{
 				fn clone(&self) -> Self {
 					Self {
-						iters: ( $(self.iters.$n.clone(), )+ )
+						iters: ( $( self.iters.$n.clone(), )+ )
+					}
+				}
+			}
+
+			impl<$($i),+,$($t),+> Clone for ZipLongest<($($i,)+),($($t,)+)>
+			where $( $i: Iterator<Item=$t> + Clone, $t: Clone ),+
+			{
+				fn clone(&self) -> Self {
+					Self {
+						iters: ( $( self.iters.$n.clone(), )+ ),
+						values: ( $( self.values.$n.clone(), )+ )
 					}
 				}
 			}
@@ -232,14 +376,21 @@ mod for_iters {
 				}, )+
 			}
 		};
+
+		// 受け取ったアイテムの数だけの要素を含むタプルを返す
+		(@repeat $( $phantom:tt $value:ident )+ ) => {
+			( $($value,)+ )
+		}
 	}
 	pub(crate) use impl_zip_iters;
 
 }
 pub use for_iters::{
-	Zip as ZipForIteratorsTuple,
-	ZipEq as ZipEqForIteratorsTuple,
-	IntoIter as IntoTupleZippedIterator
+	Zip as ZipForIterators,
+	ZipEq as ZipEqForIterators,
+	ZipLongest as ZipLongestForIterators,
+	IntoZip as IntoZipForIterators,
+	IntoZipLongest as IntoZipLongestForIterators
 };
 pub(crate) use for_iters::impl_zip_iters;
 
@@ -250,7 +401,7 @@ pub(crate) use for_iters::impl_zip_iters;
 mod for_parallel_iters {
 
 	/// 複数の並列イテレータのタプルをタプルのイテレータに変換するトレイト
-	pub trait IntoIter: Sized {
+	pub trait IntoZip: Sized {
 		/// 並列イテレータのタプル `(I1,I2,I3,...)` をタプルの並列イテレータ `ParallelIterator<Item=(T1,T2,T3,...)>` に変換します
 		fn into_zipped_iter(self) -> Zip<Self> { self.zip() }
 		/// 並列イテレータのタプル `(I1,I2,I3,...)` をタプルの並列イテレータ `ParallelIterator<Item=(T1,T2,T3,...)>` に変換します
@@ -259,8 +410,14 @@ mod for_parallel_iters {
 		fn zip_eq(self) -> Zip<Self>;
 	}
 
+	/// 複数の並列イテレータのタプルをタプルのイテレータに変換するトレイト
+	pub trait IntoZipLongest: Sized {
+		type Item;
+		fn zip_longest(self,default:Self::Item) -> ZipLongest<Self,Self::Item>;
+	}
+
 	/// 複数の並列化可能なアイテムから並列化したタプルのイテレータに変換するトレイト
-	pub trait ParallelIntoIter {
+	pub trait IntoParallelZip {
 		type ItersTuple;
 		/// 並列化可能なアイテムのタプル `(I1,I2,I3,...)` をタプルの並列イテレータ `ParallelIterator<Item=(T1,T2,T3,...)>` に変換します
 		fn parallel_zip(self) -> Zip<Self::ItersTuple>;
@@ -269,6 +426,12 @@ mod for_parallel_iters {
 	/// 複数の並列イテレータを単一のイテレータに zip した並列イテレータ
 	pub struct Zip<I> {
 		pub(crate) iters: I
+	}
+
+	/// 複数の並列イテレータを単一のイテレータに zip した並列イテレータ。要素数が一致しない場合は、デフォルト値を返す。
+	pub struct ZipLongest<I,V> {
+		pub(crate) iters: I,
+		pub(crate) values: V
 	}
 
 	pub(crate) struct ZipCallback<CCB,PIT> {
@@ -281,6 +444,12 @@ mod for_parallel_iters {
 		pub(crate) producers: P
 	}
 
+	use std::sync::Arc;
+	pub(crate) struct ZipLongestProducer<P,V> {
+		pub(crate) producers: P,
+		pub(crate) values: Arc<V>
+	}
+
 	/// * イテレータの要素数ごとに `Zip` を実装するマクロ
 	/// * `impl_zip_parallel_iters!( I0 P0 T0 0 I1 P1 T1 1 I2 P2 T2 2 ... I(N-1) P(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	/// * `I*` `P*` `T*` の異なる型パラメータとタプルのインデクスをこの順で並べていく
@@ -289,12 +458,17 @@ mod for_parallel_iters {
 		( $( $i:ident $p:ident $t:ident $n:tt )+ ) => {
 			mod impl_zip_parallel_iters {
 				use super::*;
-				use ZipForParallelIteratorsTuple as Zip;
-				use ZipCallbackForParallelIteratorsTuple as ZipCallback;
-				use ZipProducerForParallelIteratorsTuple as ZipProducer;
-				use IntoTupleZippedParallelIterator as IntoIter;
-				use IntoTupleZippedParallelIteratorFromIntoParallelIterator as ParallelIntoIter;
-				use ZipForIteratorsTuple as ZipSerial;
+				use std::sync::Arc;
+				use ZipForParallelIterators as Zip;
+				use ZipLongestForParallelIterators as ZipLongest;
+				use ZipCallbackForParallelIterators as ZipCallback;
+				use ZipProducerForParallelIterators as ZipProducer;
+				use ZipLongestProducerForParallelIterators as ZipLongestProducer;
+				use IntoZipForParallelIterators as IntoZip;
+				use IntoZipLongestForParallelIterators as IntoZipLongest;
+				use IntoZipForParallelIteratorsFromSerial as IntoParallelZip;
+				use ZipForIterators as ZipSerial;
+				use ZipLongestForIterators as ZipLongestSerial;
 				use rayon_plumbing::*;
 
 				impl_zip_parallel_iters! {@each | $( $i $p $t $n )+ }
@@ -313,7 +487,7 @@ mod for_parallel_iters {
 		// 全ての要素が `|` より前にある場合に実装を行う
 		(@each $( $i:ident $p:ident $t:ident $n:tt )+ | ) => {
 
-			impl<$($i),+> IntoIter for ( $($i,)+ )
+			impl<$($i),+> IntoZip for ($($i,)+)
 			where $( $i: IndexedParallelIterator ),+
 			{
 				fn zip(self) -> Zip<Self> {
@@ -325,7 +499,16 @@ mod for_parallel_iters {
 				}
 			}
 
-			impl<$($i),+> ParallelIntoIter for ( $($i,)+ )
+			impl<$($i),+,$($t),+> IntoZipLongest for ($($i,)+)
+			where $( $i: IndexedParallelIterator<Item=$t>, $t: Clone + Send + Sync ),+
+			{
+				type Item = ($($t,)+);
+				fn zip_longest(self,default:Self::Item) -> ZipLongest<Self,Self::Item> {
+					ZipLongest { iters: self, values: default }
+				}
+			}
+
+			impl<$($i),+> IntoParallelZip for ($($i,)+)
 			where $( $i: IntoParallelIterator ),+
 			{
 				type ItersTuple = ( $($i::Iter,)+ );
@@ -349,7 +532,7 @@ mod for_parallel_iters {
 				}
 			}
 
-			impl<$($i),+> ParallelIterator for Zip<( $($i,)+ )>
+			impl<$($i),+> ParallelIterator for Zip<($($i,)+)>
 			where $( $i: IndexedParallelIterator ),+
 			{
 
@@ -367,16 +550,34 @@ mod for_parallel_iters {
 
 			}
 
-			impl<$($p),+> Producer for ZipProducer<( $($p,)+ )>
+			impl<$($i),+,$($t),+> ParallelIterator for ZipLongest<($($i,)+),($($t,)+)>
+			where $( $i: IndexedParallelIterator<Item=$t>, $t: Clone + Send + Sync ),+
+			{
+
+				type Item = ($($i::Item,)+);
+
+				fn drive_unindexed<CC>(self, child_consumer: CC) -> CC::Result
+				where CC: UnindexedConsumer<Self::Item>
+				{ bridge(self,child_consumer) }
+
+				fn opt_len(&self) -> Option<usize> {
+					( $( self.iters.$n.opt_len(), )+ )
+					.zip_options()
+					.map(|t| t.maximum() )
+				}
+
+			}
+
+			impl<$($p),+> Producer for ZipProducer<($($p,)+)>
 			where $( $p: Producer ),+
 			{
 				type Item = ( $($p::Item,)+ );
-				type IntoIter = ZipForIteratorsTuple<( $($p::IntoIter,)+ )>;
+				type IntoIter = ZipSerial<( $($p::IntoIter,)+ )>;
 
 				fn into_iter(self) -> Self::IntoIter {
 					( $(
 						self.producers.$n.into_iter(),
-					)+ ).into_zipped_iter()
+					)+ ).zip()
 				}
 
 				fn min_len(&self) -> usize {
@@ -388,7 +589,7 @@ mod for_parallel_iters {
 				fn max_len(&self) -> usize {
 					( $(
 						self.producers.$n.max_len(),
-					)+ ).maximum()
+					)+ ).minimum()
 				}
 
 				fn split_at(self, index: usize) -> (Self, Self) {
@@ -403,6 +604,44 @@ mod for_parallel_iters {
 
 			}
 
+			impl<$($p),+,$($t),+> Producer for ZipLongestProducer<($($p,)+),($($t,)+)>
+			where $( $p: Producer<Item=$t>, $t: Clone + Send + Sync ),+
+			{
+				type Item = ($($t,)+);
+				type IntoIter = ZipLongestSerial<($($p::IntoIter,)+),Arc<($($t,)+)>>;
+
+				fn into_iter(self) -> Self::IntoIter {
+					ZipLongestSerial {
+						iters: ( $( self.producers.$n.into_iter(), )+ ),
+						values: self.values
+					}
+				}
+
+				fn min_len(&self) -> usize {
+					( $( self.producers.$n.min_len(), )+ )
+					.maximum()
+				}
+
+				fn max_len(&self) -> usize {
+					( $( self.producers.$n.max_len(), )+ )
+					.maximum()
+				}
+
+				fn split_at(self, index: usize) -> (Self, Self) {
+					let split_prod = ( $( self.producers.$n.split_at(index), )+ );
+					(
+						Self {
+							producers: ( $( split_prod.$n.0, )+ ),
+							values: self.values.clone()
+						},
+						Self {
+							producers: ( $( split_prod.$n.1, )+ ),
+							values: self.values
+						}
+					)
+				}
+			}
+
 			impl_zip_parallel_iters!{@cb_entry $( $i $p $t $n )+ }
 
 		};
@@ -415,10 +654,10 @@ mod for_parallel_iters {
 			$( $if:ident $pf:ident $tf:ident $nf:tt )*
 		) => {
 
-			impl<$i $(,$if)*> IndexedParallelIterator for Zip<( $i, $($if,)* )>
+			impl<$i$(,$if)*> IndexedParallelIterator for Zip<( $i, $($if,)* )>
 			where
-				$i: IndexedParallelIterator
-				$(, $if: IndexedParallelIterator )*
+				$i: IndexedParallelIterator,
+				$( $if: IndexedParallelIterator, )*
 			{
 
 				fn drive<CC>(self, child_consumer: CC) -> CC::Result
@@ -446,6 +685,41 @@ mod for_parallel_iters {
 
 			}
 
+			impl<$i$(,$if)*,$t$(,$tf)*> IndexedParallelIterator for ZipLongest<($i,$($if,)*),($t,$($tf,)*)>
+			where
+				$i: IndexedParallelIterator<Item=$t>,
+				$( $if: IndexedParallelIterator<Item=$tf>, )*
+				$t: Clone + Send + Sync,
+				$( $tf: Clone + Send + Sync, )*
+			{
+
+				fn drive<CC>(self, child_consumer: CC) -> CC::Result
+				where CC: Consumer<Self::Item>
+				{ bridge(self,child_consumer) }
+
+				fn len(&self) -> usize {
+					(
+						self.iters.$n.len(),
+						$( self.iters.$nf.len(), )*
+					).maximum()
+				}
+
+
+				fn with_producer<CCB>(self, child_callback: CCB) -> CCB::Output
+				where CCB: ProducerCallback<Self::Item>
+				{
+					self.iters.$n
+					.with_producer(ZipCallback {
+						child_callback,
+						prods_iters: (
+							(self.values.$n,),
+							$( (self.values.$nf,self.iters.$nf), )*
+						)
+					})
+				}
+
+			}
+
 			impl_zip_parallel_iters!{@cb | $i $p $t $n $( $if $pf $tf $nf )* }
 
 		};
@@ -457,26 +731,60 @@ mod for_parallel_iters {
 			$( $if:ident $pf:ident $tf:ident $nf:tt )*
 		) => {
 
-			impl<CCB,$in$(,$pp)*$(,$if)*,$($tp,)*$t,$tn$(,$tf)*> ProducerCallback<$t> for ZipCallback<CCB,( $(($pp,),)* (), ($in,) $(,($if,))* )>
+			impl< CCB $(,$pp)*, $in$(,$if)*, $($tp,)*$t,$tn$(,$tf)* >
+			ProducerCallback<$t>
+			for ZipCallback<CCB,( $(($pp,),)* (), ($in,) $(,($if,))* )>
 			where
-				CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>
-				$(, $pp: Producer<Item=$tp> )*
-				, $in: IndexedParallelIterator<Item=$tn>, $tn: Send
-				$(, $if: IndexedParallelIterator<Item=$tf>, $tf: Send )*
+				CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>,
+				$( $pp: Producer<Item=$tp>, )*
+				$in: IndexedParallelIterator<Item=$tn>,
+				$( $if: IndexedParallelIterator<Item=$tf>, )*
+				$tn: Send, $( $tf: Send, )*
 			{
 				type Output = CCB::Output;
 				fn callback<$p>(self, parent_producer: $p) -> Self::Output
 				where $p: Producer<Item=$t>
 				{
-					self.prods_iters.$nn.0.with_producer(ZipCallback {
+					self.prods_iters.$nn.0
+					.with_producer( ZipCallback {
 						child_callback: self.child_callback,
 						prods_iters: (
-							$( (self.prods_iters.$np.0,), )*
+							$( self.prods_iters.$np, )*
 							(parent_producer,),
 							(),
-							$( (self.prods_iters.$nf.0,), )*
+							$( self.prods_iters.$nf, )*
 						)
-					})
+					} )
+				}
+			}
+
+			impl< CCB $(,$pp)*, $in$(,$if)*, $($tp,)*$t,$tn$(,$tf)* >
+			ProducerCallback<$t>
+			for ZipCallback<CCB,( $(($tp,$pp),)* ($t,), ($tn,$in) $(,($tf,$if))* )>
+			where
+				CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>,
+				$( $pp: Producer<Item=$tp>, )*
+				$in: IndexedParallelIterator<Item=$tn>,
+				$( $if: IndexedParallelIterator<Item=$tf>, )*
+				$( $tp: Clone + Send + Sync, )*
+				$t: Clone + Send + Sync,
+				$tn: Clone + Send + Sync,
+				$( $tf: Clone + Send + Sync, )*
+			{
+				type Output = CCB::Output;
+				fn callback<$p>(self, parent_producer: $p) -> Self::Output
+				where $p: Producer<Item=$t>
+				{
+					self.prods_iters.$nn.1
+					.with_producer( ZipCallback {
+						child_callback: self.child_callback,
+						prods_iters: (
+							$( self.prods_iters.$np, )*
+							(self.prods_iters.$n.0,parent_producer),
+							(self.prods_iters.$nn.0,),
+							$( self.prods_iters.$nf, )*
+						)
+					} )
 				}
 			}
 
@@ -493,16 +801,47 @@ mod for_parallel_iters {
 			$i:ident $p:ident $t:ident $n:tt
 		) => {
 
-			impl<CCB,$($pp,)*$($tp,)*$t> ProducerCallback<$t> for ZipCallback<CCB, ( $( ($pp,), )* (), ) >
-			where CCB: ProducerCallback<($($tp,)*$t,)> $(, $pp: Producer<Item=$tp> )*
+			impl< CCB, $($pp,)* $($tp,)*$t > ProducerCallback<$t> for ZipCallback<CCB, ( $( ($pp,), )* (), ) >
+			where
+				CCB: ProducerCallback<($($tp,)*$t,)>,
+				$( $pp: Producer<Item=$tp>, )*
 			{
 				type Output = CCB::Output;
 				fn callback<$p>(self, parent_producer: $p) -> Self::Output
 				where $p: Producer<Item=$t>
 				{
-					self.child_callback.callback(ZipProducer {
-						producers: ( $(self.prods_iters.$np.0,)* parent_producer, )
-					})
+					self.child_callback
+					.callback( ZipProducer {
+						producers: (
+							$( self.prods_iters.$np.0, )*
+							parent_producer,
+						)
+					} )
+				}
+			}
+
+			impl< CCB, $($pp,)* $($tp,)*$t > ProducerCallback<$t> for ZipCallback<CCB, ( $( ($tp,$pp), )* ($t,), ) >
+			where
+				CCB: ProducerCallback<($($tp,)*$t,)>,
+				$( $pp: Producer<Item=$tp>, )*
+				$( $tp: Clone + Send + Sync, )*
+				$t: Clone + Send + Sync
+			{
+				type Output = CCB::Output;
+				fn callback<$p>(self, parent_producer: $p) -> Self::Output
+				where $p: Producer<Item=$t>
+				{
+					self.child_callback
+					.callback( ZipLongestProducer {
+						values: Arc::new( (
+							$( self.prods_iters.$np.0, )*
+							self.prods_iters.$n.0,
+						) ),
+						producers: (
+							$( self.prods_iters.$np.1, )*
+							parent_producer,
+						)
+					} )
 				}
 			}
 
@@ -513,14 +852,17 @@ mod for_parallel_iters {
 }
 #[cfg(feature="parallel")]
 pub use for_parallel_iters::{
-	Zip as ZipForParallelIteratorsTuple,
-	IntoIter as IntoTupleZippedParallelIterator,
-	ParallelIntoIter as IntoTupleZippedParallelIteratorFromIntoParallelIterator
+	Zip as ZipForParallelIterators,
+	ZipLongest as ZipLongestForParallelIterators,
+	IntoZip as IntoZipForParallelIterators,
+	IntoZipLongest as IntoZipLongestForParallelIterators,
+	IntoParallelZip as IntoZipForParallelIteratorsFromSerial
 };
 #[cfg(feature="parallel")]
 pub(crate) use for_parallel_iters::{
-	ZipProducer as ZipProducerForParallelIteratorsTuple,
-	ZipCallback as ZipCallbackForParallelIteratorsTuple,
+	ZipProducer as ZipProducerForParallelIterators,
+	ZipLongestProducer as ZipLongestProducerForParallelIterators,
+	ZipCallback as ZipCallbackForParallelIterators,
 	impl_zip_parallel_iters
 };
 

@@ -12,9 +12,11 @@ mod for_iters_tuple {
 	use CartesianProduct as Product;
 
 	/// 複数のイテレータのタプルをカーテジアン積をとった単一のイテレータに変換するトレイト
-	pub trait IntoIter: Sized {
+	pub trait IntoProduct: Sized {
 		type OriginalIters;
 		type CurrentValues;
+		type Iter;
+
 		/// イテレータのタプル `(I1,I2,I3,...)` をカーテジアン積をとったイテレータ `Iterator<Item=(T1,T2,T3,...)` に変換します。各イテレータが `Clone` を実装していなければなりません。
 		fn cartesian_product(self) -> Product<Self,Self::OriginalIters,Self::CurrentValues>;
 	}
@@ -27,8 +29,8 @@ mod for_iters_tuple {
 		( $( $i:ident $t:ident $n:tt )+ ) => {
 			mod impl_product_iters {
 				use super::*;
-				use ProductForIteratorsTuple as Product;
-				use IntoTupleProductIterator as IntoIter;
+				use ProductForIterators as Product;
+				use IntoProductForIterators as IntoProduct;
 
 				type UL = (usize,Option<usize>);
 				/// サイズヒントの計算に役立つ積と和の計算
@@ -97,13 +99,15 @@ mod for_iters_tuple {
 		// イテレータの数が1つの場合の実装
 		(@one_impl) => {
 
-			impl<T,I> IntoIter for (I,)
+			impl<T,I> IntoProduct for (I,)
 			where I: Iterator<Item=T>
 			{
 				type OriginalIters = ();
 				type CurrentValues = ();
-				fn cartesian_product(self) -> Product<Self,Self::OriginalIters,Self::CurrentValues> {
-					Product {
+				type Iter = Product<Self,Self::OriginalIters,Self::CurrentValues>;
+
+				fn cartesian_product(self) -> Self::Iter {
+					Self::Iter {
 						iters_original_tuple: (),
 						current_val_tuple: Some(()),
 						iters_tuple: self
@@ -141,7 +145,7 @@ mod for_iters_tuple {
 			$nf:tt $nl:tt
 		) => {
 
-			impl<$($ta),+,$($ia),+> IntoIter for ($($ia),+)
+			impl<$($ta),+,$($ia),+> IntoProduct for ($($ia),+)
 			where
 				$( $ia: Iterator<Item=$ta> ),+,
 				$( $iml: Clone ),+,
@@ -149,10 +153,11 @@ mod for_iters_tuple {
 			{
 				type OriginalIters = ((),$($iml),+);
 				type CurrentValues = ($($tfm),+,());
-				fn cartesian_product(self)
-				-> Product<Self,Self::OriginalIters,Self::CurrentValues>
+				type Iter = Product<Self,Self::OriginalIters,Self::CurrentValues>;
+
+				fn cartesian_product(self) -> Self::Iter
 				{
-					Product {
+					Self::Iter {
 						iters_original_tuple: ((),$(self.$nml.clone()),+),
 						current_val_tuple: None,
 						iters_tuple: self
@@ -258,8 +263,8 @@ mod for_iters_tuple {
 
 }
 pub use for_iters_tuple::{
-	CartesianProduct as ProductForIteratorsTuple,
-	IntoIter as IntoTupleProductIterator
+	CartesianProduct as ProductForIterators,
+	IntoProduct as IntoProductForIterators
 };
 pub(crate) use for_iters_tuple::impl_product_iters;
 
@@ -280,16 +285,17 @@ mod for_double_ended_iters_tuple {
 		pub(crate) current_val_forward: Option<V>,
 		pub(crate) current_val_backward: Option<V>
 	}
-	use CartesianProduct as Product;
 
 	/// 複数のイテレータのタプルをカーテジアン積をとった単一のイテレータに変換するトレイト
-	pub trait IntoIter {
+	pub trait IntoProduct {
 		type Iters;
 		type OriginalIters;
 		type CurrentValues;
 		type Length;
+		type Iter;
+
 		/// イテレータのタプル `(I1,I2,I3,...)` をカーテジアン積をとったイテレータ `Iterator<Item=(T1,T2,T3,...)` に変換します。両方向からのイテレートができます。各イテレータが `Clone` を実装していなければなりません。
-		fn cartesian_product_double_ended(self) -> Product<Self::Iters,Self::OriginalIters,Self::CurrentValues,Self::Length>;
+		fn cartesian_product_double_ended(self) -> Self::Iter;
 	}
 
 	/// * イテレータの要素数ごとに `CartesianProduct` を実装するマクロ
@@ -300,8 +306,8 @@ mod for_double_ended_iters_tuple {
 		( $( $i:ident $t:ident $n:tt )+ ) => {
 			mod impl_product_double_ended_iters {
 				use super::*;
-				use ProductForDoubleEndedIteratorsTuple as Product;
-				use IntoTupleProductDoubleEndedIterator as IntoIter;
+				use DoubleEndedProductForIterators as Product;
+				use IntoDoubleEndedProductForIterators as IntoProduct;
 
 				impl_product_double_ended_iters! {@process $( $i $t $n )+ }
 
@@ -386,7 +392,7 @@ mod for_double_ended_iters_tuple {
 		// イテレータの数が1つの場合の実装
 		(@one_impl) => {
 
-			impl<I,T> IntoIter for (I,)
+			impl<I,T> IntoProduct for (I,)
 			where
 				I: DoubleEndedIterator<Item=T> + ExactSizeIterator
 			{
@@ -394,8 +400,10 @@ mod for_double_ended_iters_tuple {
 				type OriginalIters = I;
 				type CurrentValues = ();
 				type Length = ();
-				fn cartesian_product_double_ended(self) -> Product<(),I,(),()> {
-					Product {
+				type Iter = Product<Self::Iters,Self::OriginalIters,Self::CurrentValues,Self::Length>;
+
+				fn cartesian_product_double_ended(self) -> Self::Iter {
+					Self::Iter {
 						forward_iters: (),
 						backward_iters: (),
 						length: 0,
@@ -470,7 +478,7 @@ mod for_double_ended_iters_tuple {
 		) => {
 
 			impl<$($i_fa),+,$($t_fa),+>
-			IntoIter for ($($i_fa),+)
+			IntoProduct for ($($i_fa),+)
 			where
 				$( $i_fa: DoubleEndedIterator<Item=$t_fa> + ExactSizeIterator + Clone ),+ ,
 				$( $t_fa: Clone ),+
@@ -479,7 +487,9 @@ mod for_double_ended_iters_tuple {
 				type OriginalIters = (() $(,$i_fml)+);
 				type CurrentValues = ($($t_ffm,)+ ());
 				type Length = ($($ua,)+);
-				fn cartesian_product_double_ended(self) -> Product<Self::Iters,Self::OriginalIters,Self::CurrentValues,Self::Length> {
+				type Iter = Product<Self::Iters,Self::OriginalIters,Self::CurrentValues,Self::Length>;
+
+				fn cartesian_product_double_ended(self) -> Self::Iter {
 					let l = ( $( self.$n_fa.len(), )+ );
 					let lm =
 						Some(l.0)
@@ -490,7 +500,7 @@ mod for_double_ended_iters_tuple {
 					let forward_iters = ( $(self.$n_fa.clone(),)+ );
 					let backward_iters = self;
 
-					Product {
+					Self::Iter {
 						length: lm,
 						length_each: l,
 						forward_index: 0_usize,
@@ -863,7 +873,7 @@ mod for_double_ended_iters_tuple {
 
 }
 pub use for_double_ended_iters_tuple::{
-	CartesianProduct as ProductForDoubleEndedIteratorsTuple,
-	IntoIter as IntoTupleProductDoubleEndedIterator
+	CartesianProduct as DoubleEndedProductForIterators,
+	IntoProduct as IntoDoubleEndedProductForIterators
 };
 pub(crate) use for_double_ended_iters_tuple::impl_product_double_ended_iters;
