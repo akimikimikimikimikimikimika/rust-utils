@@ -37,8 +37,9 @@ TODO
 - イテレータ関連
 	- [ ] 配列型の `Zip` に対して並列版を用意する
 	- [x] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
-	- [ ] 直列、並列ともに `zip_longest` を実装する
-	- [ ] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
+	- [x] 直列、並列ともに `zip_longest` を実装する
+	- [ ] `zip_longest` として型のデフォルト値で補完するものを用意する
+	- [x] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
 	- [ ] `CartesianProduct` の並列版を用意する
 	- [ ] 通常の `CartesianProduct` から double ended な `CartesianProduct` に変換できる `.into_double_ended_iter()` を用意
 	- [ ] 配列に対する `CartesianProduct` を用意する
