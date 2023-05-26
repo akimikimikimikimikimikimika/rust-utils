@@ -61,6 +61,11 @@ TODO
 	- [ ] 他にも [ここ](https://docs.rs/itertools/0.10.5/itertools/trait.Itertools.html#method.cartesian_product) にある操作の幾つかに対応させる
 	- [ ] `par_for_each!` を実装した `Zip` に対応させる
 		- 個数に制限があるので、俊敏に振り分けるようにする
+- `ndarray` 関連
+	- `lanes` に対応する並列イテレータ
+	- 複数の要素の書き換え可能な形での参照が可能な `multi_get_mut` の実装
+	- スワップにより内部実装の次元間の並び替えが行える関数
+		- これは難しいかな...
 - その他の新機能
 	- [ ] アーカイブ形式の一般化
 		- アーカイブからアイテムを削除する機能とか
