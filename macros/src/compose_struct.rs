@@ -2747,8 +2747,9 @@ mod has_default {
 			// バリアント内のフィールドのデフォルト値の有無とバリアント自体のデフォルト値の有無を複合的に判断してデフォルト値の有無を決定する
 			match (self.is_default,self.fields.has_default()) {
 				(true,B::TrueRequired|B::TrueOptional) => B::TrueRequired,
-				(true,B::False|B::NotAllowed) => B::NotAllowed,
-				(false,b) => b,
+				(false,B::TrueRequired) => B::TrueRequired,
+				(false,B::False|B::TrueOptional) => B::False,
+				(true,B::False)|(_,B::NotAllowed) => B::NotAllowed,
 			}
 		}
 	}
@@ -2779,7 +2780,7 @@ mod has_default {
 		}
 	}
 
-	#[derive(Clone,Copy)]
+	#[derive(Clone,Copy,Debug)]
 	/// `has_default` で用いられる4元ブール値
 	pub enum QuadBool {
 		/// 真。この値の場合は必ずデフォルト値を構成しなければならない
@@ -2815,11 +2816,10 @@ mod has_default {
 		.reduce(|b1,b2| {
 			// 2個以上の TrueRequired が存在することが認められない。他は TrueOptional 或いは False でなければならない
 			match (b1,b2) {
-				(B::NotAllowed,_)|(_,B::NotAllowed) => B::NotAllowed,
+				(B::NotAllowed|B::TrueOptional,_)|(_,B::NotAllowed|B::TrueOptional) => B::NotAllowed,
 				(B::TrueRequired,B::TrueRequired) => B::NotAllowed,
-				(B::TrueOptional,B::TrueOptional) => B::TrueOptional,
 				(B::TrueRequired,_)|(_,B::TrueRequired) => B::TrueRequired,
-				(B::False,_)|(_,B::False) => B::False
+				(B::False,B::False) => B::False
 			}
 		})
 		.unwrap_or(B::NotAllowed)
