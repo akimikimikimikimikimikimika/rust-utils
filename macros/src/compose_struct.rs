@@ -2165,6 +2165,7 @@ mod modification {
 			}
 		}
 
+		// それぞれの `Data` に対して処理を行う
 		for d in dl.iter_mut() {
 			let (ca,will_copy_derive) = match d {
 				Data::Struct(s) => (&mut s.attributes,true),
@@ -2174,21 +2175,28 @@ mod modification {
 				Data::Debug => { unreachable!(); }
 			};
 
-			if will_copy_derive && copied_derive.len()>0 {
-				ca.push(
-					Attr::Derive(copied_derive.clone())
-				);
-			}
-			if copied_allow.len()>0 {
-				ca.push(
-					Attr::Allow(copied_allow.clone())
-				);
-			}
+			// derive, allow, cfg は他のアトリビュートよりも影響が大きいことが多いので、他のアトリビュートよりも前に追加する
+			// そのために、一時的的なリストに順に追加してから、置き換える
+			let mut ca_tmp:Vec<Attr> = vec![];
+
 			for c in copied_cfg.iter() {
-				ca.push(
+				ca_tmp.push(
 					Attr::Cfg(c.clone())
 				);
 			}
+			if copied_allow.len()>0 {
+				ca_tmp.push(
+					Attr::Allow(copied_allow.clone())
+				);
+			}
+			if will_copy_derive && copied_derive.len()>0 {
+				ca_tmp.push(
+					Attr::Derive(copied_derive.clone())
+				);
+			}
+
+			ca_tmp.append(ca);
+			swap(ca,&mut ca_tmp);
 		}
 	}
 
