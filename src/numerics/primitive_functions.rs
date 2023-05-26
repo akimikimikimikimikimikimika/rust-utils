@@ -336,8 +336,9 @@ mod power {
 	use num::pow::pow as pow_usize;
 
 	/// 関数 `power` の引数として受け入れ可能な値の型を定義するトレイト
-	pub trait SupportsPowerOf<P,R> {
-		fn power_impl(self,pow:P) -> R;
+	pub trait SupportsPowerOf<P> {
+		type Result;
+		fn power_impl(self,pow:P) -> Self::Result;
 	}
 
 	/// `SupportsPowerOf<P,R>` の実装をまとめて行うマクロ
@@ -467,10 +468,11 @@ mod power {
 			{ $($body:tt)+ }
 			$( where $($w:tt)+ )?
 		) => {
-			impl $(<$($gl,)* $($gt,)*>)? SupportsPowerOf<$pt,$rt> for $bt $( where $($w)+ )?
+			impl $(<$($gl,)* $($gt,)*>)? SupportsPowerOf<$pt> for $bt $( where $($w)+ )?
 			{
+				type Result = $rt;
 				#[inline]
-				fn power_impl($s,$p:$pt) -> $rt { $($body)+ }
+				fn power_impl($s,$p:$pt) -> Self::Result { $($body)+ }
 			}
 		}
 	}
@@ -485,8 +487,8 @@ mod power {
 	}
 
 	#[inline]
-	pub fn power<B,P,R>(base:B,pow:P) -> R
-	where B: SupportsPowerOf<P,R> {
+	pub fn power<B,P>(base:B,pow:P) -> <B as SupportsPowerOf<P>>::Result
+	where B: SupportsPowerOf<P> {
 		//! ## `power`
 		//! 冪乗を計算します。 `.pow()`, `.powf()`, `.powi()` など多様な冪乗の関数を一元化し、型に合わせた関数を呼び出すように実装されています。
 		//! ### 対応する型

@@ -288,7 +288,12 @@ mod typedef {
 			default: Option<TS>
 		},
 		/// 別の構造体や列挙体を含む場合
-		Data(Data)
+		Data {
+			/// データ型が明示的に与えられた場合は、型の種類を与える (省略した場合は構造体/列挙体の型名を使う)
+			ty: Option<TS>,
+			/// 別の構造体や列挙体の定義
+			data: Data
+		}
 	}
 
 	/// `type A = B` の型エイリアスを表す
@@ -1029,6 +1034,7 @@ mod parser {
 			let mut phase = PP::Beginning;
 			let mut enclosed = false;
 			let mut is_subtype = false;
+			let mut can_be_enclosed = false;
 			let mut attr:Vec<Attr> = vec![];
 			let mut vis = TS::new();
 			let mut ty = TS::new();
@@ -1069,6 +1075,7 @@ mod parser {
 					},
 					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,"struct"|"enum",t) => {
 						is_subtype = true;
+						can_be_enclosed = true;
 						default = quote!(#t);
 						phase = PP::GotSubValType;
 					},
@@ -1120,12 +1127,21 @@ mod parser {
 						phase = PP::GotComma;
 						break;
 					},
+					(PP::GotEqual,"struct"|"enum",t) => {
+						is_subtype = true;
+						default = quote!(#t);
+						phase = PP::GotSubValType;
+					},
 					(PP::GotEqual|PP::GotDefaultVal,_,t) => {
 						default = quote!( #default #t );
 						phase = PP::GotDefaultVal;
 					},
 					// struct { }; や enum { }; のように、末尾にセミコロンを付けると、内包型として認識するようにした
+					// struct や enum といったキーワードを認識した際に can_be_enclosed フラグが付いていない場合はこのように認識されない
 					(PP::GotSubValBody,";",_) => {
+						if !can_be_enclosed {
+							error("予期しないトークン ; が含まれています",Some(&src));
+						}
 						is_subtype = false;
 						enclosed = true;
 						phase = PP::GotSemicolon;
@@ -1164,7 +1180,10 @@ mod parser {
 								name: ty,
 								default: Some(default)
 							},
-							(false,true) => FV::Data(Data::parse_from(default)),
+							(false,true) => FV::Data {
+								ty: (!ty.is_empty()).then_some(ty),
+								data: Data::parse_from(default)
+							},
 							(true,true) => { unreachable!() }
 						},
 						src: whole.to_string()
@@ -1373,7 +1392,10 @@ mod parser {
 								name: ty,
 								default: Some(default)
 							},
-							(false,true) => FV::Data(Data::parse_from(default)),
+							(false,true) => FV::Data {
+								ty: (!ty.is_empty()).then_some(ty),
+								data: Data::parse_from(default)
+							},
 							(true,true) => { unreachable!() }
 						},
 						src: whole.to_string()
@@ -1713,7 +1735,7 @@ mod modification {
 		fn modify(&mut self) {
 			match self {
 				Self::Type{..} => {},
-				Self::Data(d) => { d.modify(); }
+				Self::Data{data,..} => { data.modify(); }
 			}
 		}
 	}
@@ -1770,7 +1792,7 @@ mod modification {
 		fn get_subtype(&mut self) -> Option<&mut Data> {
 			match self {
 				Self::Type{..} => None,
-				Self::Data(d) => Some(d)
+				Self::Data {data,..} => Some(data)
 			}
 		}
 	}
@@ -1992,7 +2014,7 @@ mod modification {
 		/// デフォルト値が定義されていない場合、デフォルト値を定義する
 		fn set_default(&mut self) {
 			match self {
-				Self::Data(d) => { d.set_default(); },
+				Self::Data { data, .. } => { data.set_default(); },
 				Self::Type { default: d @ None, .. } => {
 					*d = Some( quote!( std::default::Default::default() ) );
 				},
@@ -2280,7 +2302,7 @@ mod compose {
 			quote!( #n #g )
 		}
 		fn compose_default(&self,_:&mut TS) -> TS {
-			quote!( Default::default() )
+			quote!( std::default::Default::default() )
 		}
 	}
 
@@ -2339,7 +2361,7 @@ mod compose {
 			quote!( #n #g )
 		}
 		fn compose_default(&self,_:&mut TS) -> TS {
-			quote!( Default::default() )
+			quote!( std::default::Default::default() )
 		}
 	}
 
@@ -2457,7 +2479,10 @@ mod compose {
 		fn compose(&self,global:&mut TS) -> TS {
 			match self {
 				Self::Type {name,..} => name.clone(),
-				Self::Data(d) => d.compose(global)
+				Self::Data {data,ty} => {
+					let cd = data.compose(global);
+					ty.as_ref().map_or(cd,|r| r.clone() )
+				}
 			}
 		}
 		fn compose_default(&self,global:&mut TS) -> TS {
@@ -2466,7 +2491,7 @@ mod compose {
 				Self::Type {default:None,..} => {
 					quote!( std::default::Default::default() )
 				},
-				Self::Data(d) => d.compose_default(global)
+				Self::Data{data,..} => data.compose_default(global)
 			}
 		}
 	}
@@ -2670,7 +2695,7 @@ mod has_default {
 			match self {
 				Self::Type{default: Some(_),..} => B::TrueRequired,
 				Self::Type{default: None,..} => B::False,
-				Self::Data(d) => d.has_default()
+				Self::Data{data,..} => data.has_default()
 			}
 		}
 	}

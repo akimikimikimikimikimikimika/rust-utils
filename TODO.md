@@ -10,7 +10,7 @@ TODO
 		- ガンマ、ゼータとか
 	- [ ] 任意精度の実数や整数の型を作るか、既存のライブラリの型をインテグレートする
 	- `power` 関数
-		- [ ] `power` の戻り値の型を`SupportsPowerOf` トレイトの型パラメータにするのではなく、 `type PowerOutput;` で指定できるようにする
+		- [x] `power` の戻り値の型を `SupportsPowerOf` トレイトの型パラメータにするのではなく、 `type PowerOutput;` で指定できるようにする
 		- [ ] `power(f64,f32)` や `power(Complex<f64>,f32)`, `power(Complex<f64>,Complex<f32>)` に対応させる
 		- [ ] `NonZero**` への対応
 			- 2重3重の `from` を使って
@@ -29,6 +29,8 @@ TODO
 			- マクロ展開された時点で適用されるモジュールを用意するため
 	- `par_for_each!` マクロ
 		- [ ] NDArray 向けの `each_nd` の他に一般のイテレータ向けの `each` 関数も実装する
+		- [ ] NDArray のインデクスからインデクスに関するイテレータを生成できるようにする
+		- [ ] `feature="parallel"` が指定されていない限り `par_for_each` を無効にする
 	- [ ] トークン系のマクロで、トークンをビルド時に標準エラー出力に出力されるようにしたものを用意
 	- [ ] マクロ展開を便利にする手続き型マクロ
 		- [ ] 積の形にマクロ展開する `macro_product!` を実装
@@ -52,7 +54,7 @@ TODO
 		- [ ] `Option<T>` をアイテムに持つイテレータ向けに `and_then`, `or_else`, `unwrap_or_else`, `unwrap_or`, `unwrap_or_default`, `map_or_else`, `map_or` を提供する
 		- [ ] `Result<T,E>` をアイテムに持つイテレータ向けに `and_then`, `or_else`, `unwrap_or_else`, `unwrap_or`, `unwrap_or_default`, `map_or_else`, `map_or` を提供する
 	- [ ] イテレータに `Clone` トレイトを実装する
-	- [ ] 直列版に対する `.zip_eq()` や `.zip_longest()` を用意する
+	- [x] 直列版に対する `.zip_eq()` や `.zip_longest()` を用意する
 	- [ ] `unzip` を用意できればいいかな
 	- [x] `Iterator.chain` に対して複数のイテレータをチェーンする関数を用意できればいいな
 	- [ ] `permutations` や `combination` のイテレータを用意する
