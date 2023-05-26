@@ -243,9 +243,9 @@ mod typedef {
 		Named(NamedFields)
 	}
 	/// `Fields` にカプセル化されるフィールド型
-	pub struct CapsuledFields<T> {
+	pub struct CapsuledFields<F> {
 		/// フィールドのリスト
-		pub fields: Vec<T>,
+		pub fields: Vec<F>,
 		/// 内包するデータ型
 		pub enclosed: Vec<Data>
 	}
@@ -467,14 +467,24 @@ mod parser {
 		Unknown
 	}
 
-	/// 構造体や列挙体内部のように、通常のバリアント/フィールドと表記上内包する `Data` のいずれか一方を返せる型
-	enum ItemOrData<T> {
+	/// グループに含まれる項目を返す型。通常のバリアント/フィールド、表記上内包する `Data` 型、内側に定義されたアトリビュートを返せる
+	enum GroupItem<I> {
 		/// バリアント/フィールドなど、通常の値の場合
-		Item(T),
+		Item(I),
 		/// 内包する `Data` 型の場合
 		Data(Data),
+		/// 内側で定義されるアトリビュート
+		InnerAttr(Attr),
 		/// 末尾でいづれでもない場合
 		None
+	}
+
+	/// フィールドと合わせてアトリビュートを受け取る
+	struct FieldsWithAttr<F> {
+		/// フィールド
+		fields: F,
+		/// アトリビュート
+		attrs: Vec<Attr>
 	}
 
 	#[inline]
@@ -808,22 +818,29 @@ mod parser {
 			type F = Fields;
 			type K = ParsedKind;
 
+			let mut attributes = pr.attr;
+			let fields = match pr.kind {
+				K::StructUnit => F::Unit,
+				K::StructUnnamed => {
+					let FieldsWithAttr { fields: f, attrs: a } = UnnamedFields::parse_from(pr.body);
+					attributes.extend(a);
+					F::Unnamed(f)
+				},
+				K::StructNamed => {
+					let FieldsWithAttr { fields: f, attrs: a } = NamedFields::parse_from(pr.body);
+					attributes.extend(a);
+					F::Named(f)
+				},
+				_ => { unreachable!(); }
+			};
+
 			Self {
 				name: pr.name,
 				generics: pr.generics,
-				attributes: pr.attr,
+				attributes,
 				visibility: pr.vis,
 				where_condition: pr.wh,
-				fields: match pr.kind {
-					K::StructUnit => F::Unit,
-					K::StructUnnamed => F::Unnamed(
-						UnnamedFields::parse_from(pr.body)
-					),
-					K::StructNamed => F::Named(
-						NamedFields::parse_from(pr.body)
-					),
-					_ => { unreachable!(); }
-				},
+				fields,
 				src: pr.src
 			}
 		}
@@ -834,14 +851,16 @@ mod parser {
 		fn parse_from(pr:ParsingResult) -> Self {
 			let mut variants:Vec<EnumVariant> = vec![];
 			let mut enclosed:Vec<Data> = vec![];
+			let mut attributes = pr.attr;
 			let mut iter = pr.body.into_iter();
 
 			loop {
-				type IoD = ItemOrData<EnumVariant>;
+				type GI = GroupItem<EnumVariant>;
 				match EnumVariant::parse_from(&mut iter) {
-					IoD::Item(v) => variants.push(v),
-					IoD::Data(d) => enclosed.push(d),
-					IoD::None => break
+					GI::Item(v) => variants.push(v),
+					GI::Data(d) => enclosed.push(d),
+					GI::InnerAttr(a) => attributes.push(a),
+					GI::None => break
 				}
 			}
 
@@ -855,7 +874,7 @@ mod parser {
 			Self {
 				name: pr.name,
 				generics: pr.generics,
-				attributes: pr.attr,
+				attributes,
 				visibility: pr.vis,
 				where_condition: pr.wh,
 				variants, enclosed,
@@ -865,24 +884,31 @@ mod parser {
 	}
 
 	// 列挙体のバリアントをパース
-	impl<I: TI> ParseFrom<&mut I,ItemOrData<Self>> for EnumVariant {
-		fn parse_from(iter:&mut I) -> ItemOrData<Self> {
+	impl<I: TI> ParseFrom<&mut I,GroupItem<Self>> for EnumVariant {
+		fn parse_from(iter:&mut I) -> GroupItem<Self> {
 			let src = TS::from_iter(iter.clone()).to_string();
 
 			/// 現在のパースの過程を表す型
 			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
+				Beginning,
+				GotAttrHash, GotAttrExclamation, GotAttrBody,
 				GotFieldName, GotFieldValue,
 				GotEqual, GotDefault,
 				GotEnclosedType, GotEnclosedHeader, GotEnclosedBody,
 				GotComma, GotSemicolon
 			}
 			type PP = ParsingPhase;
-			type IoD = ItemOrData<EnumVariant>;
+
+			/// パースして得られたアイテムの種類
+			enum ParsedType {
+				Variant, Enclosed, InnerAttr
+			}
+			type PT = ParsedType;
+
 			type F = Fields;
 
 			let mut phase = PP::Beginning;
-			let mut enclosed = false;
+			let mut pt = PT::Variant;
 			let mut attr:Vec<Attr> = vec![];
 			let mut name:Option<Ident> = None;
 			let mut fields = F::Unit;
@@ -900,13 +926,18 @@ mod parser {
 					(PP::Beginning|PP::GotAttrBody,"#",_) => {
 						phase = PP::GotAttrHash;
 					},
-					(PP::GotAttrHash,_,TT::Group(g)) => {
+					(PP::GotAttrHash,"!",_) => {
+						pt = PT::InnerAttr;
+						phase = PP::GotAttrExclamation;
+					},
+					(PP::GotAttrHash|PP::GotAttrExclamation,_,TT::Group(g)) => {
 						attr.push( Attr::parse_from(g.stream()) );
 						phase = PP::GotAttrBody;
+						if matches!(pt,PT::InnerAttr) { break }
 					},
 					(PP::Beginning|PP::GotAttrBody,"struct"|"enum"|"type"|"trait",_) => {
+						pt = PT::Enclosed;
 						phase = PP::GotEnclosedType;
-						enclosed = true;
 					},
 					(PP::Beginning|PP::GotAttrBody,_,TT::Ident(i)) => {
 						name = Some(i);
@@ -915,15 +946,15 @@ mod parser {
 					(PP::GotFieldName,_,TT::Group(g)) => {
 						match g.delimiter() {
 							Delimiter::Parenthesis => {
-								fields = F::Unnamed(
-									UnnamedFields::parse_from(g.stream())
-								);
+								let FieldsWithAttr { fields: f, attrs: a } = UnnamedFields::parse_from(g.stream());
+								fields = F::Unnamed(f);
+								attr.extend(a);
 								phase = PP::GotFieldValue;
 							},
 							Delimiter::Brace => {
-								fields = F::Named(
-									NamedFields::parse_from(g.stream())
-								);
+								let FieldsWithAttr { fields: f, attrs: a } = NamedFields::parse_from(g.stream());
+								fields = F::Named(f);
+								attr.extend(a);
 								phase = PP::GotFieldValue;
 							},
 							_ => error(
@@ -967,19 +998,23 @@ mod parser {
 				whole = quote!( #whole #tt );
 			}
 
-			match (phase,enclosed) {
-				(PP::GotFieldName|PP::GotDefault|PP::GotFieldValue|PP::GotComma,false) => {
-					IoD::Item( Self {
+			type GI = GroupItem<EnumVariant>;
+			match (phase,pt) {
+				(PP::GotFieldName|PP::GotDefault|PP::GotFieldValue|PP::GotComma,PT::Variant) => {
+					GI::Item( Self {
 						attributes: attr,
 						name: name.unwrap(),
 						fields, is_default,
 						src: whole.to_string(),
 					} )
 				},
-				(PP::GotEnclosedBody|PP::GotSemicolon,true) => {
-					IoD::Data( Data::parse_from(whole) )
+				(PP::GotEnclosedBody|PP::GotSemicolon,PT::Enclosed) => {
+					GI::Data( Data::parse_from(whole) )
 				},
-				(PP::Beginning,_) => IoD::None,
+				(PP::GotAttrBody,PT::InnerAttr) => {
+					GI::InnerAttr( attr.pop().unwrap() )
+				},
+				(PP::Beginning,_) => GI::None,
 				_ => {
 					error("終わり方が正しくありません",Some(&src));
 				}
@@ -988,19 +1023,21 @@ mod parser {
 	}
 
 	// 名前なしフィールドのフィールドリストをパース
-	impl ParseFrom<TS,Self> for UnnamedFields {
-		fn parse_from(ts:TS) -> Self {
+	impl ParseFrom<TS,FieldsWithAttr<Self>> for UnnamedFields {
+		fn parse_from(ts:TS) -> FieldsWithAttr<Self> {
 			let src = quote!( (#ts) ).to_string();
 			let mut fields: Vec<UnnamedField> = vec![];
 			let mut enclosed: Vec<Data> = vec![];
+			let mut attrs: Vec<Attr> = vec![];
 			let mut iter = ts.into_iter();
 
 			loop {
-				type IoD = ItemOrData<UnnamedField>;
+				type GI = GroupItem<UnnamedField>;
 				match UnnamedField::parse_from(&mut iter) {
-					IoD::Item(f) => fields.push(f),
-					IoD::Data(d) => enclosed.push(d),
-					IoD::None => break
+					GI::Item(f) => fields.push(f),
+					GI::Data(d) => enclosed.push(d),
+					GI::InnerAttr(a) => attrs.push(a),
+					GI::None => break
 				}
 			}
 
@@ -1011,18 +1048,22 @@ mod parser {
 				);
 			}
 
-			Self { fields, enclosed }
+			FieldsWithAttr {
+				fields: Self { fields, enclosed },
+				attrs
+			}
 		}
 	}
 
 	// 単一の名前なしフィールドをパース
-	impl<I: TI> ParseFrom<&mut I,ItemOrData<Self>> for UnnamedField {
-		fn parse_from(iter:&mut I) -> ItemOrData<Self> {
+	impl<I: TI> ParseFrom<&mut I,GroupItem<Self>> for UnnamedField {
+		fn parse_from(iter:&mut I) -> GroupItem<Self> {
 			let src = TS::from_iter(iter.clone()).to_string();
 
 			/// 現在のパースの過程を表す型
 			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
+				Beginning,
+				GotAttrHash, GotAttrExclamation, GotAttrBody,
 				GotPub, GotVisibility,
 				GotType, GotEqual, GotDefaultVal,
 				GotSubValType, GotSubValHeader, GotSubValBody,
@@ -1031,9 +1072,14 @@ mod parser {
 			}
 			type PP = ParsingPhase;
 
+			/// パースして得られたアイテムの種類
+			enum ParsedType {
+				Field, SubtypeField, Enclosed, InnerAttribute
+			}
+			type PT = ParsedType;
+
 			let mut phase = PP::Beginning;
-			let mut enclosed = false;
-			let mut is_subtype = false;
+			let mut pt = PT::Field;
 			let mut can_be_enclosed = false;
 			let mut attr:Vec<Attr> = vec![];
 			let mut vis = TS::new();
@@ -1053,9 +1099,14 @@ mod parser {
 					(PP::Beginning|PP::GotAttrBody|PP::GotComma,"#",_) => {
 						phase = PP::GotAttrHash;
 					},
-					(PP::GotAttrHash,_,TT::Group(g)) => {
+					(PP::GotAttrHash,"!",_) => {
+						pt = PT::InnerAttribute;
+						phase = PP::GotAttrExclamation;
+					},
+					(PP::GotAttrHash|PP::GotAttrExclamation,_,TT::Group(g)) => {
 						attr.push( Attr::parse_from(g.stream()) );
 						phase = PP::GotAttrBody;
+						if matches!(pt,PT::InnerAttribute) { break }
 					},
 					(PP::Beginning|PP::GotAttrBody,"pub",_) => {
 						vis = quote!(pub);
@@ -1074,13 +1125,13 @@ mod parser {
 						}
 					},
 					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,"struct"|"enum",t) => {
-						is_subtype = true;
+						pt = PT::SubtypeField;
 						can_be_enclosed = true;
 						default = quote!(#t);
 						phase = PP::GotSubValType;
 					},
 					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,"type"|"trait",_) => {
-						enclosed = true;
+						pt = PT::Enclosed;
 						phase = PP::GotEnclosedType;
 					},
 					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody|PP::GotComma,_,TT::Ident(i)) => {
@@ -1128,7 +1179,7 @@ mod parser {
 						break;
 					},
 					(PP::GotEqual,"struct"|"enum",t) => {
-						is_subtype = true;
+						pt = PT::SubtypeField;
 						default = quote!(#t);
 						phase = PP::GotSubValType;
 					},
@@ -1142,8 +1193,7 @@ mod parser {
 						if !can_be_enclosed {
 							error("予期しないトークン ; が含まれています",Some(&src));
 						}
-						is_subtype = false;
-						enclosed = true;
+						pt = PT::Enclosed;
 						phase = PP::GotSemicolon;
 						break;
 					},
@@ -1165,34 +1215,43 @@ mod parser {
 			}
 
 			type FV = FieldValue;
-			type IoD = ItemOrData<UnnamedField>;
-			match (phase,enclosed) {
-				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,false) => {
-					IoD::Item( Self {
+			type GI = GroupItem<UnnamedField>;
+			match (phase,pt) {
+				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,PT::Field) => {
+					GI::Item( Self {
 						attributes: attr,
 						visibility: vis,
-						value: match (default.is_empty(),is_subtype) {
-							(true,false) => FV::Type {
+						value: match default.is_empty() {
+							true => FV::Type {
 								name: ty,
 								default: None
 							},
-							(false,false) => FV::Type {
+							false => FV::Type {
 								name: ty,
 								default: Some(default)
-							},
-							(false,true) => FV::Data {
-								ty: (!ty.is_empty()).then_some(ty),
-								data: Data::parse_from(default)
-							},
-							(true,true) => { unreachable!() }
+							}
 						},
 						src: whole.to_string()
 					} )
 				},
-				(PP::GotSemicolon,true) => {
-					IoD::Data( Data::parse_from(whole) )
+				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,PT::SubtypeField) => {
+					GI::Item( Self {
+						attributes: attr,
+						visibility: vis,
+						value: FV::Data {
+							ty: (!ty.is_empty()).then_some(ty),
+							data: Data::parse_from(default)
+						},
+						src: whole.to_string()
+					} )
 				},
-				(PP::Beginning,_) => IoD::None,
+				(PP::GotSemicolon,PT::Enclosed) => {
+					GI::Data( Data::parse_from(whole) )
+				},
+				(PP::GotAttrBody,PT::InnerAttribute) => {
+					GI::InnerAttr( attr.pop().unwrap() )
+				},
+				(PP::Beginning,_) => GI::None,
 				_ => {
 					error("終わり方が正しくありません",Some(&src));
 				}
@@ -1201,19 +1260,21 @@ mod parser {
 	}
 
 	// 名前ありフィールドのフィールドリストをパース
-	impl ParseFrom<TS,Self> for NamedFields {
-		fn parse_from(ts:TS) -> Self {
+	impl ParseFrom<TS,FieldsWithAttr<Self>> for NamedFields {
+		fn parse_from(ts:TS) -> FieldsWithAttr<Self> {
 			let src = quote!( {#ts} ).to_string();
 			let mut fields: Vec<NamedField> = vec![];
 			let mut enclosed: Vec<Data> = vec![];
+			let mut attrs: Vec<Attr> = vec![];
 			let mut iter = ts.into_iter();
 
 			loop {
-				type IoD = ItemOrData<NamedField>;
+				type GI = GroupItem<NamedField>;
 				match NamedField::parse_from(&mut iter) {
-					IoD::Item(f) => fields.push(f),
-					IoD::Data(d) => enclosed.push(d),
-					IoD::None => break
+					GI::Item(f) => fields.push(f),
+					GI::Data(d) => enclosed.push(d),
+					GI::InnerAttr(a) => attrs.push(a),
+					GI::None => break
 				}
 			}
 
@@ -1224,18 +1285,23 @@ mod parser {
 				);
 			}
 
-			Self { fields, enclosed }
+			FieldsWithAttr {
+				fields: Self { fields, enclosed },
+				attrs
+			}
+
 		}
 	}
 
 	// 単一の名前ありフィールドをパース
-	impl<I: TI> ParseFrom<&mut I,ItemOrData<Self>> for NamedField {
-		fn parse_from(iter:&mut I) -> ItemOrData<Self> {
+	impl<I: TI> ParseFrom<&mut I,GroupItem<Self>> for NamedField {
+		fn parse_from(iter:&mut I) -> GroupItem<Self> {
 			let src = TS::from_iter(iter.clone()).to_string();
 
 			/// 現在のパースの過程を表す型
 			enum ParsingPhase {
-				Beginning, GotAttrHash, GotAttrBody,
+				Beginning,
+				GotAttrHash, GotAttrExclamation, GotAttrBody,
 				GotPub, GotVisibility,
 				GotName, GotColon, GotType,
 				GotEqual, GotDefaultVal,
@@ -1245,9 +1311,14 @@ mod parser {
 			}
 			type PP = ParsingPhase;
 
+			/// パースして得られたアイテムの種類
+			enum ParsedType {
+				Field, SubtypeField, Enclosed, InnerAttribute
+			}
+			type PT = ParsedType;
+
 			let mut phase = PP::Beginning;
-			let mut enclosed = false;
-			let mut is_subtype = false;
+			let mut pt = PT::Field;
 			let mut attr:Vec<Attr> = vec![];
 			let mut vis = TS::new();
 			let mut name:Option<Ident> = None;
@@ -1267,9 +1338,14 @@ mod parser {
 					(PP::Beginning|PP::GotAttrBody|PP::GotComma,"#",_) => {
 						phase = PP::GotAttrHash;
 					},
-					(PP::GotAttrHash,_,TT::Group(g)) => {
+					(PP::GotAttrHash,"!",_) => {
+						pt = PT::InnerAttribute;
+						phase = PP::GotAttrExclamation;
+					},
+					(PP::GotAttrHash|PP::GotAttrExclamation,_,TT::Group(g)) => {
 						attr.push( Attr::parse_from(g.stream()) );
 						phase = PP::GotAttrBody;
+						if matches!(pt,PT::InnerAttribute) { break }
 					},
 					(PP::Beginning|PP::GotAttrBody,"pub",_) => {
 						vis = quote!(pub);
@@ -1288,7 +1364,7 @@ mod parser {
 						}
 					},
 					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,"struct"|"enum"|"type"|"trait",_) => {
-						enclosed = true;
+						pt = PT::Enclosed;
 						phase = PP::GotEnclosedType;
 					},
 					(PP::Beginning|PP::GotPub|PP::GotVisibility|PP::GotAttrBody,_,TT::Ident(i)) => {
@@ -1329,7 +1405,7 @@ mod parser {
 						phase = PP::GotType;
 					},
 					(PP::GotEqual,"struct"|"enum",t) => {
-						is_subtype = true;
+						pt = PT::SubtypeField;
 						default = quote!(#t);
 						phase = PP::GotSubValType;
 					},
@@ -1376,35 +1452,45 @@ mod parser {
 			}
 
 			type FV = FieldValue;
-			type IoD = ItemOrData<NamedField>;
-			match (phase,enclosed) {
-				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,false) => {
-					IoD::Item( Self {
+			type GI = GroupItem<NamedField>;
+			match (phase,pt) {
+				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,PT::Field) => {
+					GI::Item( Self {
 						attributes: attr,
 						visibility: vis,
 						name: name.unwrap(),
-						value: match (default.is_empty(),is_subtype) {
-							(true,false) => FV::Type {
+						value: match default.is_empty() {
+							true => FV::Type {
 								name: ty,
 								default: None
 							},
-							(false,false) => FV::Type {
+							false => FV::Type {
 								name: ty,
 								default: Some(default)
-							},
-							(false,true) => FV::Data {
-								ty: (!ty.is_empty()).then_some(ty),
-								data: Data::parse_from(default)
-							},
-							(true,true) => { unreachable!() }
+							}
 						},
 						src: whole.to_string()
 					} )
 				},
-				(PP::GotSemicolon|PP::GotEnclosedBody,true) => {
-					IoD::Data( Data::parse_from(whole) )
+				(PP::GotComma|PP::GotType|PP::GotDefaultVal|PP::GotSubValBody,PT::SubtypeField) => {
+					GI::Item( Self {
+						attributes: attr,
+						visibility: vis,
+						name: name.unwrap(),
+						value: FV::Data {
+							ty: (!ty.is_empty()).then_some(ty),
+							data: Data::parse_from(default)
+						},
+						src: whole.to_string()
+					} )
 				},
-				(PP::Beginning,_) => IoD::None,
+				(PP::GotSemicolon|PP::GotEnclosedBody,PT::Enclosed) => {
+					GI::Data( Data::parse_from(whole) )
+				},
+				(PP::GotAttrBody,PT::InnerAttribute) => {
+					GI::InnerAttr( attr.pop().unwrap() )
+				},
+				(PP::Beginning,_) => GI::None,
 				_ => {
 					error("終わり方が正しくありません",Some(&src));
 				}
@@ -1583,35 +1669,37 @@ mod modification {
 			self.check_pub_all();
 			self.check_default();
 
-			let Self {
-				ref mut attributes,
-				ref mut fields,
-				ref visibility,
-				..
-			} = self;
+			// フィールドの種類によらない抽象化
+			impl Struct {
+				fn exchange_with_fields<F: GetSubtype>(&mut self,fields:&mut CapsuledFields<F>) {
+					let Self {
+						ref mut attributes,
+						ref visibility,
+						..
+					} = self;
 
-			type F = Fields;
-			match fields {
-				F::Unit => {},
-				F::Unnamed(f) => {
-					let mut st = f.collect_subtype();
-					copy_attr_to_subtype(&*attributes,&mut st);
+					let mut st = fields.collect_subtype();
+					copy_attr_to_subtype(&*attributes, &mut st);
 
-					for d in f.enclosed.iter_mut() {
-						inherit_visibility(visibility,d);
-					}
-				},
-				F::Named(f) => {
-					let mut st = f.collect_subtype();
-					copy_attr_to_subtype(&*attributes,&mut st);
-
-					for d in f.enclosed.iter_mut() {
+					for d in fields.enclosed.iter_mut() {
 						inherit_visibility(visibility,d);
 					}
 				}
 			}
 
-			remove_duplicate(attributes);
+			let (st,fields) = unsafe {
+				let p = self as *mut Struct;
+				( (&mut *p), &mut (&mut *p).fields )
+			};
+
+			type F = Fields;
+			match fields {
+				F::Unit => {},
+				F::Unnamed(f) => st.exchange_with_fields(f),
+				F::Named(f) => st.exchange_with_fields(f)
+			}
+
+			remove_duplicate(&mut self.attributes);
 
 			fields.modify();
 		}
@@ -1669,18 +1757,7 @@ mod modification {
 		}
 	}
 
-	impl Modify for UnnamedFields {
-		fn modify(&mut self) {
-			for f in self.fields.iter_mut() {
-				f.modify();
-			}
-			for d in self.enclosed.iter_mut() {
-				d.modify();
-			}
-		}
-	}
-
-	impl Modify for NamedFields {
+	impl<F: Modify> Modify for CapsuledFields<F> {
 		fn modify(&mut self) {
 			for f in self.fields.iter_mut() {
 				f.modify();
@@ -1697,7 +1774,7 @@ mod modification {
 			self.check_default();
 
 			let Self {
-				ref mut attributes,
+				ref attributes,
 				ref mut value,
 				ref visibility,
 				..
@@ -1717,7 +1794,7 @@ mod modification {
 			self.check_default();
 
 			let Self {
-				ref mut attributes,
+				ref attributes,
 				ref mut value,
 				ref visibility,
 				..
@@ -1761,34 +1838,35 @@ mod modification {
 			}
 		}
 	}
-	impl CollectSubType for UnnamedFields {
+	impl<F: GetSubtype> CollectSubType for CapsuledFields<F> {
 		fn collect_subtype(&mut self) -> Vec<&mut Data> {
 			let Self {
 				ref mut fields,
-				ref mut enclosed
+				ref mut enclosed,
+				..
 			} = self;
 
 			fields.iter_mut()
-			.filter_map(|f| f.value.get_subtype() )
+			.filter_map(|f| f.get_subtype() )
 			.chain( enclosed.iter_mut() )
 			.collect::<Vec<_>>()
 		}
 	}
-	impl CollectSubType for NamedFields {
-		fn collect_subtype(&mut self) -> Vec<&mut Data> {
-			let Self {
-				ref mut fields,
-				ref mut enclosed
-			} = self;
-
-			fields.iter_mut()
-			.filter_map(|f| f.value.get_subtype() )
-			.chain( enclosed.iter_mut() )
-			.collect::<Vec<_>>()
-		}
-	}
-	impl FieldValue {
+	trait GetSubtype {
 		/// フィールドの値が構造体/列挙体を包含するものであれば、それを返す
+		fn get_subtype(&mut self) -> Option<&mut Data>;
+	}
+	impl GetSubtype for UnnamedField {
+		fn get_subtype(&mut self) -> Option<&mut Data> {
+			self.value.get_subtype()
+		}
+	}
+	impl GetSubtype for NamedField {
+		fn get_subtype(&mut self) -> Option<&mut Data> {
+			self.value.get_subtype()
+		}
+	}
+	impl GetSubtype for FieldValue {
 		fn get_subtype(&mut self) -> Option<&mut Data> {
 			match self {
 				Self::Type{..} => None,
@@ -1833,7 +1911,8 @@ mod modification {
 				F::Unit => {},
 				F::Unnamed( UnnamedFields {
 					ref mut fields,
-					ref mut enclosed
+					ref mut enclosed,
+					..
 				} ) => {
 					for f in fields.iter_mut() {
 						f.visibility = quote!(pub);
@@ -1844,7 +1923,8 @@ mod modification {
 				},
 				F::Named( NamedFields {
 					ref mut fields,
-					ref mut enclosed
+					ref mut enclosed,
+					..
 				} ) => {
 					for f in fields.iter_mut() {
 						f.visibility = quote!(pub);
@@ -2036,9 +2116,9 @@ mod modification {
 		*vis_child = vis.clone();
 	}
 
-	/// 構造体のフィールドに付されたアトリビュートを、値となるサブ構造体/列挙体に移動或いはコピーする
-	fn move_field_attrs_to_subtype(pal:&mut Vec<Attr>,value:&mut FieldValue) {
-		let mut tmp = pal.iter()
+	/// 構造体のフィールドに付されたアトリビュート (`doc`/`cfg`) を、値となるサブ構造体/列挙体に移動或いはコピーする
+	fn move_field_attrs_to_subtype(pal:&Vec<Attr>,value:&mut FieldValue) {
+		let tmp = pal.iter()
 		.filter_map(|a| {
 			match a {
 				Attr::Doc(_)|Attr::Cfg(_) => Some(a.clone()),
@@ -2046,7 +2126,6 @@ mod modification {
 			}
 		})
 		.collect::<Vec<_>>();
-		swap(pal,&mut tmp);
 		let cal = match value.get_subtype() {
 			None => { return },
 			Some(Data::Struct(s)) => &mut s.attributes,
@@ -2086,6 +2165,7 @@ mod modification {
 			}
 		}
 
+		// それぞれの `Data` に対して処理を行う
 		for d in dl.iter_mut() {
 			let (ca,will_copy_derive) = match d {
 				Data::Struct(s) => (&mut s.attributes,true),
@@ -2095,21 +2175,28 @@ mod modification {
 				Data::Debug => { unreachable!(); }
 			};
 
-			if will_copy_derive && copied_derive.len()>0 {
-				ca.push(
-					Attr::Derive(copied_derive.clone())
-				);
-			}
-			if copied_allow.len()>0 {
-				ca.push(
-					Attr::Allow(copied_allow.clone())
-				);
-			}
+			// derive, allow, cfg は他のアトリビュートよりも影響が大きいことが多いので、他のアトリビュートよりも前に追加する
+			// そのために、一時的的なリストに順に追加してから、置き換える
+			let mut ca_tmp:Vec<Attr> = vec![];
+
 			for c in copied_cfg.iter() {
-				ca.push(
+				ca_tmp.push(
 					Attr::Cfg(c.clone())
 				);
 			}
+			if copied_allow.len()>0 {
+				ca_tmp.push(
+					Attr::Allow(copied_allow.clone())
+				);
+			}
+			if will_copy_derive && copied_derive.len()>0 {
+				ca_tmp.push(
+					Attr::Derive(copied_derive.clone())
+				);
+			}
+
+			ca_tmp.append(ca);
+			swap(ca,&mut ca_tmp);
 		}
 	}
 
@@ -2668,8 +2755,9 @@ mod has_default {
 			// バリアント内のフィールドのデフォルト値の有無とバリアント自体のデフォルト値の有無を複合的に判断してデフォルト値の有無を決定する
 			match (self.is_default,self.fields.has_default()) {
 				(true,B::TrueRequired|B::TrueOptional) => B::TrueRequired,
-				(true,B::False|B::NotAllowed) => B::NotAllowed,
-				(false,b) => b,
+				(false,B::TrueRequired) => B::TrueRequired,
+				(false,B::False|B::TrueOptional) => B::False,
+				(true,B::False)|(_,B::NotAllowed) => B::NotAllowed,
 			}
 		}
 	}
@@ -2700,7 +2788,7 @@ mod has_default {
 		}
 	}
 
-	#[derive(Clone,Copy)]
+	#[derive(Clone,Copy,Debug)]
 	/// `has_default` で用いられる4元ブール値
 	pub enum QuadBool {
 		/// 真。この値の場合は必ずデフォルト値を構成しなければならない
@@ -2736,11 +2824,10 @@ mod has_default {
 		.reduce(|b1,b2| {
 			// 2個以上の TrueRequired が存在することが認められない。他は TrueOptional 或いは False でなければならない
 			match (b1,b2) {
-				(B::NotAllowed,_)|(_,B::NotAllowed) => B::NotAllowed,
+				(B::NotAllowed|B::TrueOptional,_)|(_,B::NotAllowed|B::TrueOptional) => B::NotAllowed,
 				(B::TrueRequired,B::TrueRequired) => B::NotAllowed,
-				(B::TrueOptional,B::TrueOptional) => B::TrueOptional,
 				(B::TrueRequired,_)|(_,B::TrueRequired) => B::TrueRequired,
-				(B::False,_)|(_,B::False) => B::False
+				(B::False,B::False) => B::False
 			}
 		})
 		.unwrap_or(B::NotAllowed)
