@@ -15,19 +15,16 @@ pub(crate) use rayon::iter::{
 
 
 
-mod zip;
-pub use zip::*;
-
-mod product;
-pub use product::*;
-
-mod chain;
-pub use chain::*;
-
-mod extended_map;
-pub use extended_map::*;
+#[cfg(feature="iterator")]
+pub mod zip;
+#[cfg(feature="iterator")]
+pub mod product;
 
 #[cfg(feature="iterator")]
-mod misc;
+pub mod chain;
+
 #[cfg(feature="iterator")]
-pub use misc::*;
+pub mod extended_map;
+
+#[cfg(feature="iterator")]
+pub mod misc;

@@ -3,7 +3,7 @@
 use super::*;
 
 /// イテレータのタプルを zip する関数を含むモジュール
-mod for_iters {
+pub mod for_iters {
 
 	/// 複数のイテレータのタプルをタプルのイテレータに変換するトレイト
 	pub trait IntoZip: Sized {
@@ -39,19 +39,18 @@ mod for_iters {
 	}
 
 	/// * イテレータの要素数ごとに `Zip` を実装するマクロ
-	/// * `impl_zip_iters!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	/// * `implement!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	/// * 異なる型パラメータとタプルのインデクスを交互に並べる
-	macro_rules! impl_zip_iters {
+	macro_rules! implement {
 		// マクロのエントリポイント: 全ての実装をモジュールで囲む
 		( $( $i:ident $t:ident $n:tt )+ ) => {
 			mod impl_zip_iters {
 				use super::*;
 				use std::sync::Arc;
-				use ZipForIterators as Zip;
-				use ZipEqForIterators as ZipEq;
-				use ZipLongestForIterators as ZipLongest;
-				use IntoZipForIterators as IntoZip;
-				use IntoZipLongestForIterators as IntoZipLongest;
+				use crate::iterator::zip::{
+					for_iters::*,
+					len_equality::LenEquality
+				};
 
 				/// 内部からのみアクセス可能で `ZipLongest` 向けの実装を提供する `Iterator` トレイトと同じメソッドを持つ構造体
 				struct ZLImpl<I,V> {
@@ -60,13 +59,13 @@ mod for_iters {
 				}
 
 				// `|` で要素を区切り、要素数ごとにマクロで実装を定義
-				impl_zip_iters! {@each | $( $i $t $n )+ }
+				implement! {@each | $( $i $t $n )+ }
 			}
 		};
 		// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
 		(@each $( $i:ident $t:ident $n:tt )* | $in:ident $tn:ident $nn:tt $( $others:tt )* ) => {
-			impl_zip_iters! {@each $( $i $t $n )* | }
-			impl_zip_iters! {@each $( $i $t $n )* $in $tn $nn | $( $others )* }
+			implement! {@each $( $i $t $n )* | }
+			implement! {@each $( $i $t $n )* $in $tn $nn | $( $others )* }
 		};
 		// 全ての要素が `|` より前にある場合に実装を行う
 		(@each $( $i:ident $t:ident $n:tt )+ | ) => {
@@ -124,14 +123,14 @@ mod for_iters {
 				type Item = ( $( $t, )+ );
 
 				fn next(&mut self) -> Option<Self::Item> {
-					impl_zip_iters!{@zip_eq
+					implement!{@zip_eq
 						target( ( $(self.iters.$n.next(), )+ ) )
 						indices($($i)+)
 					}
 				}
 
 				fn nth(&mut self,n:usize) -> Option<Self::Item> {
-					impl_zip_iters!{@zip_eq
+					implement!{@zip_eq
 						target( ( $(self.iters.$n.nth(n), )+ ) )
 						indices($($i)+)
 					}
@@ -186,7 +185,7 @@ mod for_iters {
 			{
 				fn next(&mut self) -> Option<($($t,)+)> {
 					let t = ( $( self.iters.$n.next(), )+ );
-					if matches!(t,impl_zip_iters!{@repeat $( $n None )+ }) { return None; }
+					if matches!(t,implement!{@repeat $( $n None )+ }) { return None; }
 					Some( ( $(
 						t.$n.unwrap_or_else(|| self.values.$n.clone() ),
 					)+ ) )
@@ -338,7 +337,7 @@ mod for_iters {
 		};
 		// `ZipEq` の `.next()` や `.nth()` の条件分岐: エントリポイント
 		(@zip_eq target($($t:tt)+) indices($($i:tt)+)) => {
-			impl_zip_iters!{@zip_eq
+			implement!{@zip_eq
 				target($($t)+)
 				all_some() all_none() not_yet($($i)+)
 			}
@@ -351,7 +350,7 @@ mod for_iters {
 			$( one_none($i:tt: $($o:tt)*) )*
 			not_yet($y0:tt $($y:tt)*)
 		) => {
-			impl_zip_iters!{@zip_eq
+			implement!{@zip_eq
 				target($($t)+)
 				all_some($($s)* Some(_),)
 				all_none($($n)* None,)
@@ -382,23 +381,15 @@ mod for_iters {
 			( $($value,)+ )
 		}
 	}
-	pub(crate) use impl_zip_iters;
+	pub(crate) use implement;
 
 }
-pub use for_iters::{
-	Zip as ZipForIterators,
-	ZipEq as ZipEqForIterators,
-	ZipLongest as ZipLongestForIterators,
-	IntoZip as IntoZipForIterators,
-	IntoZipLongest as IntoZipLongestForIterators
-};
-pub(crate) use for_iters::impl_zip_iters;
 
 
 
 #[cfg(feature="parallel")]
 /// 並列イテレータのタプルを zip する関数を含むモジュール
-mod for_parallel_iters {
+pub mod for_parallel_iters {
 
 	/// 複数の並列イテレータのタプルをタプルのイテレータに変換するトレイト
 	pub trait IntoZip: Sized {
@@ -451,27 +442,25 @@ mod for_parallel_iters {
 	}
 
 	/// * イテレータの要素数ごとに `Zip` を実装するマクロ
-	/// * `impl_zip_parallel_iters!( I0 P0 T0 0 I1 P1 T1 1 I2 P2 T2 2 ... I(N-1) P(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	/// * `implement!( I0 P0 T0 0 I1 P1 T1 1 I2 P2 T2 2 ... I(N-1) P(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	/// * `I*` `P*` `T*` の異なる型パラメータとタプルのインデクスをこの順で並べていく
-	macro_rules! impl_zip_parallel_iters {
+	macro_rules! implement {
 		// マクロのエントリポイント: 全ての実装をモジュールで囲む
 		( $( $i:ident $p:ident $t:ident $n:tt )+ ) => {
 			mod impl_zip_parallel_iters {
 				use super::*;
 				use std::sync::Arc;
-				use ZipForParallelIterators as Zip;
-				use ZipLongestForParallelIterators as ZipLongest;
-				use ZipCallbackForParallelIterators as ZipCallback;
-				use ZipProducerForParallelIterators as ZipProducer;
-				use ZipLongestProducerForParallelIterators as ZipLongestProducer;
-				use IntoZipForParallelIterators as IntoZip;
-				use IntoZipLongestForParallelIterators as IntoZipLongest;
-				use IntoZipForParallelIteratorsFromSerial as IntoParallelZip;
-				use ZipForIterators as ZipSerial;
-				use ZipLongestForIterators as ZipLongestSerial;
+				use crate::iterator::zip::{
+					for_parallel_iters::*,
+					for_iters::{
+						Zip as ZipSerial,
+						ZipLongest as ZipLongestSerial
+					},
+					len_equality::LenEquality
+				};
 				use rayon_plumbing::*;
 
-				impl_zip_parallel_iters! {@each | $( $i $p $t $n )+ }
+				implement! {@each | $( $i $p $t $n )+ }
 			}
 		};
 
@@ -481,8 +470,8 @@ mod for_parallel_iters {
 			$in:ident $pn:ident $tn:ident $nn:tt
 			$( $others:tt )*
 		) => {
-			impl_zip_parallel_iters! {@each $( $i $p $t $n )* | }
-			impl_zip_parallel_iters! {@each $( $i $p $t $n )* $in $pn $tn $nn | $( $others )* }
+			implement! {@each $( $i $p $t $n )* | }
+			implement! {@each $( $i $p $t $n )* $in $pn $tn $nn | $( $others )* }
 		};
 		// 全ての要素が `|` より前にある場合に実装を行う
 		(@each $( $i:ident $p:ident $t:ident $n:tt )+ | ) => {
@@ -575,9 +564,9 @@ mod for_parallel_iters {
 				type IntoIter = ZipSerial<( $($p::IntoIter,)+ )>;
 
 				fn into_iter(self) -> Self::IntoIter {
-					( $(
+					ZipSerial { iters: ( $(
 						self.producers.$n.into_iter(),
-					)+ ).zip()
+					)+ ) }
 				}
 
 				fn min_len(&self) -> usize {
@@ -642,7 +631,7 @@ mod for_parallel_iters {
 				}
 			}
 
-			impl_zip_parallel_iters!{@cb_entry $( $i $p $t $n )+ }
+			implement!{@cb_entry $( $i $p $t $n )+ }
 
 		};
 		// `|` の前に要素が全くない場合
@@ -720,7 +709,7 @@ mod for_parallel_iters {
 
 			}
 
-			impl_zip_parallel_iters!{@cb | $i $p $t $n $( $if $pf $tf $nf )* }
+			implement!{@cb | $i $p $t $n $( $if $pf $tf $nf )* }
 
 		};
 		// `ProducerCallback` の実装: N個の要素があれば、最初の N-1 個についてはここで実装を行う
@@ -788,7 +777,7 @@ mod for_parallel_iters {
 				}
 			}
 
-			impl_zip_parallel_iters!{@cb
+			implement!{@cb
 				$( $ip $pp $tp $np )* $i $p $t $n |
 				$in $pn $tn $nn
 				$( $if $pf $tf $nf )*
@@ -847,29 +836,14 @@ mod for_parallel_iters {
 
 		};
 	}
-	pub(crate) use impl_zip_parallel_iters;
+	pub(crate) use implement;
 
 }
-#[cfg(feature="parallel")]
-pub use for_parallel_iters::{
-	Zip as ZipForParallelIterators,
-	ZipLongest as ZipLongestForParallelIterators,
-	IntoZip as IntoZipForParallelIterators,
-	IntoZipLongest as IntoZipLongestForParallelIterators,
-	IntoParallelZip as IntoZipForParallelIteratorsFromSerial
-};
-#[cfg(feature="parallel")]
-pub(crate) use for_parallel_iters::{
-	ZipProducer as ZipProducerForParallelIterators,
-	ZipLongestProducer as ZipLongestProducerForParallelIterators,
-	ZipCallback as ZipCallbackForParallelIterators,
-	impl_zip_parallel_iters
-};
 
 
 
 /// `ZipEq` 向けの `len_equality` 関数を提供するモジュール
-mod len_equality {
+pub(crate) mod len_equality {
 
 	/// 要素数が合致しているか合致する内部向けトレイト。合致しない場合はパニックを発する。
 	pub(crate) trait LenEquality {
@@ -877,14 +851,13 @@ mod len_equality {
 	}
 
 	/// `len_equality` をまとめて定義するマクロ
-	macro_rules! impl_len_equality {
+	macro_rules! implement {
 		// マクロのエントリポイント: 全ての実装をモジュールで囲む
 		(indices: $($n:tt)+ ) => {
 			mod len_equality {
-				use super::*;
-				use ZipEqLenEquality as LenEquality;
+				use crate::iterator::zip::len_equality::*;
 
-				impl_len_equality! {@each | $( usize $n )+ }
+				implement! {@each | $( usize $n )+ }
 			}
 		};
 		// `|` より前にある要素のみの場合と、1つだけ要素を増やした場合に分ける
@@ -892,8 +865,8 @@ mod len_equality {
 			$( $up:ident $np:tt )* |
 			$uc:ident $nc:tt $( $un:ident $nn:tt )*
 		) => {
-			impl_len_equality!{@each $( $up $np )* | }
-			impl_len_equality!{@each $( $up $np )* $uc $nc | $( $un $nn )* }
+			implement!{@each $( $up $np )* | }
+			implement!{@each $( $up $np )* $uc $nc | $( $un $nn )* }
 		};
 		// `|` の前に1つだけ要素がある場合
 		(@each usize 0 | ) => {
@@ -905,7 +878,7 @@ mod len_equality {
 		(@each $( $u:ident $n:tt )+ | ) => {
 			impl LenEquality for ($($u,)+) {
 				fn len_equality(self) {
-					if impl_len_equality!{@ne self -> for $($n)+ } {
+					if implement!{@ne self -> for $($n)+ } {
 						let src = [
 							"要素数が合致しません:".to_string(),
 							$( format!(
@@ -927,7 +900,7 @@ mod len_equality {
 			$s:ident -> $( ($cond:expr) )*
 			for $n0:tt $n1:tt $($n:tt)*
 		) => {
-			impl_len_equality! {@ne
+			implement! {@ne
 				$s -> $( ($cond) )* ($s.$n0!=$s.$n1)
 				for $n1 $($n)*
 			}
@@ -937,30 +910,27 @@ mod len_equality {
 			$( ($cond) )||+
 		};
 	}
-	pub(crate) use impl_len_equality;
+	pub(crate) use implement;
 
 }
-pub(crate) use len_equality::{
-	LenEquality as ZipEqLenEquality,
-	impl_len_equality
-};
 
 
 
 /// イテレータの配列を zip する関数を含むモジュール
-mod for_iters_array {
+pub mod for_iters_array {
 	use super::*;
+	use crate::prelude::*;
 
 	/// 複数のイテレータの配列をベクタのイテレータに変換するトレイト
 	pub struct Zip<I> {
 		iters: Vec<I>
 	}
 
-	pub trait IntoIter<I> {
+	pub trait IntoZip<I> {
 		/// イテレータの配列 `[I;N]` や `Vec<I>` などを配列のイテレータ `Iterator<Item=Vec<T>>` に変換します
 		fn zip(self) -> Zip<I>;
 	}
-	impl<II,I,T> IntoIter<I> for II
+	impl<II,I,T> IntoZip<I> for II
 	where II: IntoIterator<Item=I>, I: Iterator<Item=T>
 	{
 		fn zip(self) -> Zip<I> {
@@ -1041,7 +1011,22 @@ mod for_iters_array {
 	where I: FusedIterator<Item=T> {}
 
 }
-pub use for_iters_array::{
-	Zip as ZipForIteratorsArray,
-	IntoIter as IntoArrayZippedIterator
-};
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		for_iters::{
+			IntoZip as IntoZipForIterators,
+			IntoZipLongest as IntoZipLongestForIterators
+		},
+		for_iters_array::
+		IntoZip as IntoArrayZippedIterator
+	};
+	#[cfg(feature="parallel")]
+	pub use super::for_parallel_iters::{
+		IntoZipLongest as IntoZipLongestForParallelIterators,
+		IntoParallelZip as IntoZipForParallelIteratorsFromSerial
+	};
+}

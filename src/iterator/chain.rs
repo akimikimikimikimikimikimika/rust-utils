@@ -1,8 +1,8 @@
 /// イテレータのタプルに対してチェーンを定義するモジュール
-mod for_iters_tuple {
+pub mod for_iters_tuple {
 
 	/// 複数のイテレータのタプルをチェーンしたイテレータに変換するトレイト
-	pub trait IntoIter: Sized {
+	pub trait IntoChain: Sized {
 		/// イテレータのタプル `(I1,I2,I3,...)` を `I1`→`I2`→`I3` という順に連結した1つのイテレータに変換します
 		fn into_chained_iter(self) -> Chain<Self>;
 		/// イテレータのタプル `(I1,I2,I3,...)` を `I1`→`I2`→`I3` という順に連結した1つのイテレータに変換します
@@ -17,24 +17,23 @@ mod for_iters_tuple {
 	}
 
 	/// * 複数のイテレータに対する `Chain` トレイトを実装するマクロ
-	/// * `impl_chain_iters!( I0 0 I1 1 I2 2 ... I(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
-	macro_rules! impl_chain_iters {
+	/// * `implement!( I0 0 I1 1 I2 2 ... I(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! implement {
 		( $( $i:ident $n:tt )+ ) => {
 			mod impl_chain_iters {
 				use super::*;
-				use ChainForIteratorTuple as Chain;
-				use IntoChainedIteratorForIteratorsTuple as IntoIter;
+				use crate::iterator::chain::for_iters_tuple::*;
 
-				impl_chain_iters! {@each T | $( $i $n )+ }
+				implement! {@each T | $( $i $n )+ }
 			}
 		};
 		(@each $t:ident $( $i:ident $n:tt )* | $in:ident $nn:tt $( $others:tt )* ) => {
-			impl_chain_iters! {@each $t $( $i $n )* | }
-			impl_chain_iters! {@each $t $( $i $n )* $in $nn | $($others)* }
+			implement! {@each $t $( $i $n )* | }
+			implement! {@each $t $( $i $n )* $in $nn | $($others)* }
 		};
 		(@each $t:ident $( $i:ident $n:tt )+ | ) => {
 
-			impl<$t,$($i),+> IntoIter for ($($i,)+)
+			impl<$t,$($i),+> IntoChain for ($($i,)+)
 			where $( $i: Iterator<Item=$t> ),+
 			{
 				fn into_chained_iter(self) -> Chain<Self> {
@@ -65,7 +64,7 @@ mod for_iters_tuple {
 				}
 			}
 
-			impl_chain_iters! {@backward $t 0 | $( $i $n )+ }
+			implement! {@backward $t 0 | $( $i $n )+ }
 
 			impl<$t,$($i),+> ExactSizeIterator for Chain<($($i,)+)>
 			where $( $i: ExactSizeIterator<Item=$t> ),+ {}
@@ -80,7 +79,7 @@ mod for_iters_tuple {
 			$( $i:ident $n:tt )* |
 			$in:ident $nn:tt $( $others:tt )*
 		) => {
-			impl_chain_iters! {@backward $t $nn $in $nn $( $i $n )* | $($others)* }
+			implement! {@backward $t $nn $in $nn $( $i $n )* | $($others)* }
 		};
 		(@backward
 			$t:ident $n_largest:tt
@@ -99,11 +98,13 @@ mod for_iters_tuple {
 			}
 		};
 	}
-	pub(crate) use impl_chain_iters;
+	pub(crate) use implement;
 
 }
-pub use for_iters_tuple::{
-	Chain as ChainForIteratorTuple,
-	IntoIter as IntoChainedIteratorForIteratorsTuple
-};
-pub(crate) use for_iters_tuple::impl_chain_iters;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	use super::for_iters_tuple::IntoChain as IntoChainedIteratorForIteratorsTuple;
+}

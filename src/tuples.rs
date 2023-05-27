@@ -116,6 +116,7 @@ mod array {
 		( $( $t:ident $n:tt )+ ) => {
 			mod impl_zip_arrays {
 				use super::*;
+				use crate::prelude::*;
 
 				impl_zip_arrays! {@each | $( $t $n )+ }
 			}

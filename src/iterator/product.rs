@@ -1,7 +1,7 @@
 //! 複数のイテレータのカーテジアン積をとるトレイトやイテレータをまとめたモジュール
 
 /// イテレータのタプルに関してカーテジアン積をとる関数を含むモジュール
-mod for_iters_tuple {
+pub mod for_iters_tuple {
 
 	/// 複数のイテレータのカーテジアン積をとったイテレータ
 	pub struct CartesianProduct<I,O,V> {
@@ -22,15 +22,14 @@ mod for_iters_tuple {
 	}
 
 	/// * イテレータの要素数ごとに `CartesianProduct` を実装するマクロ
-	/// * `impl_product_iters!( I0 T0 0 I1 T1 1 I2 T2 2 ... I(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	/// * `implement!( I0 T0 0 I1 T1 1 I2 T2 2 ... I(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	/// * `I*` `T*` の異なる型パラメータとタプルのインデクスをこの順で並べていく
-	macro_rules! impl_product_iters {
+	macro_rules! implement {
 		// マクロのエントリポイント: 全ての実装をモジュールで囲む
 		( $( $i:ident $t:ident $n:tt )+ ) => {
 			mod impl_product_iters {
 				use super::*;
-				use ProductForIterators as Product;
-				use IntoProductForIterators as IntoProduct;
+				use crate::iterator::product::for_iters_tuple::{ *, CartesianProduct as Product  };
 
 				type UL = (usize,Option<usize>);
 				/// サイズヒントの計算に役立つ積と和の計算
@@ -43,7 +42,7 @@ mod for_iters_tuple {
 					)
 				}
 
-				impl_product_iters! {@process $( $i $t $n )+ }
+				implement! {@process $( $i $t $n )+ }
 			}
 		};
 
@@ -52,7 +51,7 @@ mod for_iters_tuple {
 			$i0:ident $t0:ident $n0:tt
 			$( $i:ident $t:ident $n:tt )*
 		) => {
-			impl_product_iters! {@process | $i0 $t0 $n0 | $( $i $t $n )* }
+			implement! {@process | $i0 $t0 $n0 | $( $i $t $n )* }
 		};
 		// 引数を分離するプロセス: `|` により3つに分かれた領域のうち、前の2つを残す場合と、後ろから1つずつ要素をずらした場合に分ける
 		// 1つ目の領域: impl するアイテムの末尾以外
@@ -64,18 +63,18 @@ mod for_iters_tuple {
 			$in:ident $tn:ident $nn:tt
 			$( $others:tt )*
 		) => {
-			impl_product_iters! {@process
+			implement! {@process
 				$( $i $t $n )* | $il $tl $nl |
 			}
-			impl_product_iters! {@process
+			implement! {@process
 				$( $i $t $n )* $il $tl $nl |
 				$in $tn $nn | $( $others )*
 			}
 		};
 		// 引数を分離するプロセス: impl するアイテムの数が1つの場合 → 後述の one_impl に渡す
 		(@process | $i:ident $t:ident $n:tt | ) => {
-			impl_product_iters! {@one_impl}
-			impl_product_iters! {@additional_impl I }
+			implement! {@one_impl}
+			implement! {@additional_impl I }
 		};
 		// 引数を分離するプロセス: impl するアイテムの数が複数ある場合 → 引数を加工した上で後述の many_impl に渡す
 		(@process
@@ -83,7 +82,7 @@ mod for_iters_tuple {
 			$( $i:ident $t:ident $n:tt )* |
 			$il:ident $tl:ident $nl:tt |
 		) => {
-			impl_product_iters! {@many_impl
+			implement! {@many_impl
 				$if $tf $nf
 				$( $i $t $n )*
 				$il $tl $nl |
@@ -93,7 +92,7 @@ mod for_iters_tuple {
 				$il $tl $nl |
 				$nf $nl
 			}
-			impl_product_iters! {@additional_impl $if $($i)* $il }
+			implement! {@additional_impl $if $($i)* $il }
 		};
 
 		// イテレータの数が1つの場合の実装
@@ -181,7 +180,7 @@ mod for_iters_tuple {
 					} = self;
 
 					if let Some(cv) = cvo.as_mut() {
-						let last = impl_product_iters!{@next
+						let last = implement!{@next
 							it iot cv ($($na)+)
 						};
 						Some( ( $( cv.$nfm.clone(), )+ last ) )
@@ -230,7 +229,7 @@ mod for_iters_tuple {
 			$it:ident $iot:ident $cv:ident
 			($nc:tt $($ny:tt)+)
 		) => {
-			impl_product_iters!{@next
+			implement!{@next
 				$it $iot $cv () $nc ($($ny)+)
 				{ $it.$nc.next()? }
 			}
@@ -241,7 +240,7 @@ mod for_iters_tuple {
 			($($nd:tt)*) $np:tt ($nc:tt $($ny:tt)*)
 			{$($inner:tt)+}
 		) => {
-			impl_product_iters!{@next
+			implement!{@next
 				$it $iot $cv ($($nd)* $np) $nc ($($ny)*)
 				{ match $it.$nc.next() {
 					Some(v) => v,
@@ -259,19 +258,14 @@ mod for_iters_tuple {
 			($($nd:tt)*) $np:tt () {$($src:tt)+}
 		) => { $($src)+ };
 	}
-	pub(crate) use impl_product_iters;
+	pub(crate) use implement;
 
 }
-pub use for_iters_tuple::{
-	CartesianProduct as ProductForIterators,
-	IntoProduct as IntoProductForIterators
-};
-pub(crate) use for_iters_tuple::impl_product_iters;
 
 
 
 /// イテレータのタプルに関してカーテジアン積をとり、両側からアクセスできるようにした関数を含むモジュール
-mod for_double_ended_iters_tuple {
+pub mod for_double_ended_iters_tuple {
 
 	/// 複数のイテレータのカーテジアン積をとったイテレータで、両方向からのイテレートが可能
 	pub struct CartesianProduct<I,O,V,L> {
@@ -299,17 +293,16 @@ mod for_double_ended_iters_tuple {
 	}
 
 	/// * イテレータの要素数ごとに `CartesianProduct` を実装するマクロ
-	/// * `impl_product_double_ended_iters!( I0 T0 0 I1 T1 1 I2 T2 2 ... I(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	/// * `implement!( I0 T0 0 I1 T1 1 I2 T2 2 ... I(N-1) T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	/// * `I*` `T*` の異なる型パラメータとタプルのインデクスをこの順で並べていく
-	macro_rules! impl_product_double_ended_iters {
+	macro_rules! implement {
 		// マクロのエントリポイント: 全ての実装をモジュールで囲む
 		( $( $i:ident $t:ident $n:tt )+ ) => {
-			mod impl_product_double_ended_iters {
+			mod implement {
 				use super::*;
-				use DoubleEndedProductForIterators as Product;
-				use IntoDoubleEndedProductForIterators as IntoProduct;
+				use crate::iterator::product::for_double_ended_iters_tuple::{ *, CartesianProduct as Product };
 
-				impl_product_double_ended_iters! {@process $( $i $t $n )+ }
+				implement! {@process $( $i $t $n )+ }
 
 				fn length<I,O,V,L>(p:&Product<I,O,V,L>) -> usize {
 					p.backward_index
@@ -324,7 +317,7 @@ mod for_double_ended_iters_tuple {
 			$i0:ident $t0:ident $n0:tt
 			$( $i:ident $t:ident $n:tt )*
 		) => {
-			impl_product_double_ended_iters! {@process
+			implement! {@process
 				first( $i0 $t0 $n0 ) last( )
 				mid_forward( ) mid_backward( )
 				not_yet( $( $i $t $n )* )
@@ -341,13 +334,13 @@ mod for_double_ended_iters_tuple {
 				$( $others:tt )*
 			)
 		) => {
-			impl_product_double_ended_iters! {@process
+			implement! {@process
 				first( $i_f $t_f $n_f ) last( $( $i_l $t_l $n_l )? )
 				mid_forward( $( $i_mf $t_mf $n_mf )* )
 				mid_backward( $( $i_mb $t_mb $n_mb )* )
 				not_yet( )
 			}
-			impl_product_double_ended_iters! {@process
+			implement! {@process
 				first( $i_f $t_f $n_f ) last( $i_n $t_n $n_n )
 				mid_forward( $( $i_mf $t_mf $n_mf )* $( $i_l $t_l $n_l )? )
 				mid_backward( $( $i_l $t_l $n_l )? $( $i_mb $t_mb $n_mb )* )
@@ -359,7 +352,7 @@ mod for_double_ended_iters_tuple {
 			first( $i:ident $t:ident $n:tt )
 			last() mid_forward() mid_backward() not_yet()
 		) => {
-			impl_product_double_ended_iters! {@one_impl}
+			implement! {@one_impl}
 		};
 		// 引数を分離するプロセス: impl するアイテムの数が複数ある場合 → 引数を加工した上で後述の many_impl に渡す
 		(@process
@@ -369,7 +362,7 @@ mod for_double_ended_iters_tuple {
 			mid_backward( $( $i_mb:ident $t_mb:ident $n_mb:tt )* )
 			not_yet( )
 		) => {
-			impl_product_double_ended_iters! {@many_impl
+			implement! {@many_impl
 				forward_all(
 					$i_f $t_f $n_f usize
 					$( $i_mf $t_mf $n_mf usize )*
@@ -554,7 +547,7 @@ mod for_double_ended_iters_tuple {
 
 					let cv = cvo.as_mut()?;
 					let mut i = *id;
-					impl_product_double_ended_iters!{@next next it oi cv i l ($($n_fa)+) }
+					implement!{@next next it oi cv i l ($($n_fa)+) }
 					*id += 1;
 					Some((
 						$( cv.$n_ffm.clone(), )+
@@ -679,7 +672,7 @@ mod for_double_ended_iters_tuple {
 
 					let cv = cvo.as_mut()?;
 					let mut i = *id;
-					impl_product_double_ended_iters!{@next next_back it oi cv i l ($($n_fa)+) }
+					implement!{@next next_back it oi cv i l ($($n_fa)+) }
 					*id -= 1;
 					Some((
 						$( cv.$n_ffm.clone(), )+
@@ -834,7 +827,7 @@ mod for_double_ended_iters_tuple {
 			$i:ident $l:ident
 			($nc:tt $($ny:tt)+)
 		) => {
-			impl_product_double_ended_iters!{@next
+			implement!{@next
 				$next $it $oi $cv $i $l
 				() $nc ($($ny)+)
 				{ if $i % $l.$nc == 0 {
@@ -850,7 +843,7 @@ mod for_double_ended_iters_tuple {
 			($($nd:tt)*) $np:tt ($nc:tt $($ny:tt)*)
 			{$($inner:tt)+}
 		) => {
-			impl_product_double_ended_iters!{@next
+			implement!{@next
 				$next $it $oi $cv $i $l
 				($($nd)* $np) $nc ($($ny)*)
 				{ if $i % $l.$nc == 0 {
@@ -869,11 +862,16 @@ mod for_double_ended_iters_tuple {
 			($($nd:tt)*) $np:tt () {$($src:tt)+}
 		) => { $($src)+ };
 	}
-	pub(crate) use impl_product_double_ended_iters;
+	pub(crate) use implement;
 
 }
-pub use for_double_ended_iters_tuple::{
-	CartesianProduct as DoubleEndedProductForIterators,
-	IntoProduct as IntoDoubleEndedProductForIterators
-};
-pub(crate) use for_double_ended_iters_tuple::impl_product_double_ended_iters;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		for_iters_tuple::IntoProduct as IntoProductForIterators,
+		for_double_ended_iters_tuple::IntoProduct as IntoDoubleEndedProductForIterators
+	};
+}
