@@ -31,7 +31,11 @@ mod hypot_extension {
 	/// * `impl_hypot!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	macro_rules! impl_hypot {
 		(indices: $($i:tt)+ ) => {
-			impl_hypot! {@each T | $($i),+ }
+			mod impl_hypot {
+				use super::*;
+
+				impl_hypot! {@each T | $($i),+ }
+			}
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
 			impl_hypot! {@each $t $($tx $x),* | }
