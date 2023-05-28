@@ -106,5 +106,5 @@ pub mod for_iters_tuple {
 
 /// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
 pub(crate) mod for_prelude {
-	use super::for_iters_tuple::IntoChain as IntoChainedIteratorForIteratorsTuple;
+	pub use super::for_iters_tuple::IntoChain as IntoChainedIteratorForIteratorsTuple;
 }

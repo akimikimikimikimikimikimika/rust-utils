@@ -488,7 +488,8 @@ mod iter_impl {
 			make!{@each
 				item_type: { $($it)+ }
 				items: [ $($items)+ ]
-				into_map: {} into_parallel_map: {}
+				into_map_trait: {} into_map_impl: {}
+				into_parallel_map_trait: {} into_parallel_map_impl: {}
 			}
 		};
 		(@each
@@ -507,8 +508,10 @@ mod iter_impl {
 				$( where_parallel: { $($wp:tt)+ } )?
 				call: { $si:ident, $ii:ident -> $($body:tt)+ }
 			} $($other_items:tt)* ]
-			into_map: { $($im:tt)* }
-			into_parallel_map: { $($ipm:tt)* }
+			into_map_trait: { $($im_t:tt)* }
+			into_map_impl: { $($im_i:tt)* }
+			into_parallel_map_trait: { $($ipm_t:tt)* }
+			into_parallel_map_impl: { $($ipm_i:tt)* }
 		) => {
 
 			$( #[doc=concat!(
@@ -552,15 +555,25 @@ mod iter_impl {
 			make!{@each
 				item_type: { $($t),+: $ti }
 				items: [ $($other_items)* ]
-				into_map: { $($im)*
+				into_map_trait: { $($im_t)*
 					$( #[doc=$desc] )?
+					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
+					-> $nis<Self $($(,$pt)+)? $($(,$ppt)+)?>
+					$( where $($ws)+ )?;
+				}
+				into_map_impl: { $($im_i)*
 					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
 					-> $nis<Self $($(,$pt)+)? $($(,$ppt)+)?>
 					$( where $($ws)+ )?
 					{ Map { iter: self, map_fn: $nmf ($($($pi,)+)? $($(PhantomData::<$ppt>,)+)?) } }
 				}
-				into_parallel_map: { $($ipm)*
+				into_parallel_map_trait: { $($ipm_t)*
 					$( #[doc=$desc] )?
+					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
+					-> $nip<Self $($(,$pt)+)? $($(,$ppt)+)?>
+					$( where $($wp)+ )?;
+				}
+				into_parallel_map_impl: { $($ipm_i)*
 					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
 					-> $nip<Self $($(,$pt)+)? $($(,$ppt)+)?>
 					$( where $($wp)+ )?
@@ -572,20 +585,29 @@ mod iter_impl {
 		(@each
 			item_type: { $($t:ident),+: $ti:ty }
 			items: []
-			into_map: { $($im:tt)+ }
-			into_parallel_map: { $($ipm:tt)+ }
+			into_map_trait: { $($im_t:tt)+ }
+			into_map_impl: { $($im_i:tt)+ }
+			into_parallel_map_trait: { $($ipm_t:tt)+ }
+			into_parallel_map_impl: { $($ipm_i:tt)+ }
 		) => {
 
 			/// イテレータを拡張して、写像関連のイテレータを生成するメソッドを提供するトレイト
-			pub trait IntoMap<$($t),+>
-			where Self: Iterator<Item=$ti> + Sized
-			{ $($im)+ }
+			pub trait IntoMap<$($t),+>: Sized
+			{ $($im_t)+ }
+
+			impl<I $(,$t)+> IntoMap<$($t),+> for I
+			where I: Iterator<Item=$ti>
+			{ $($im_i)+ }
 
 			#[cfg(feature="parallel")]
 			/// 並列イテレータを拡張して、写像関連のイテレータを生成するメソッドを提供するトレイト
-			pub trait IntoParallelMap<$($t),+>
-			where Self: ParallelIterator<Item=$ti> + Sized
-			{ $($ipm)+ }
+			pub trait IntoParallelMap<$($t),+>: Sized
+			{ $($ipm_t)+ }
+
+			#[cfg(feature="parallel")]
+			impl<I $(,$t)+> IntoParallelMap<$($t),+> for I
+			where I: ParallelIterator<Item=$ti>
+			{ $($ipm_i)+ }
 
 		};
 	}
