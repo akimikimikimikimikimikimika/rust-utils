@@ -1734,6 +1734,7 @@ mod modification {
 			.for_each(|v| {
 				v.modify();
 			});
+
 			enclosed.iter_mut()
 			.for_each(|d| d.modify() );
 		}
@@ -1742,6 +1743,8 @@ mod modification {
 	impl Modify for EnumVariant {
 		fn modify(&mut self) {
 			self.check_default();
+
+			self.remove_vis_of_fields();
 
 			self.fields.modify();
 		}
@@ -1776,13 +1779,9 @@ mod modification {
 			let Self {
 				ref attributes,
 				ref mut value,
-				ref visibility,
 				..
 			} = self;
 
-			if let Some(d) = value.get_subtype() {
-				inherit_visibility(visibility,d);
-			}
 			move_field_attrs_to_subtype(attributes,value);
 			value.modify();
 		}
@@ -1796,13 +1795,9 @@ mod modification {
 			let Self {
 				ref attributes,
 				ref mut value,
-				ref visibility,
 				..
 			} = self;
 
-			if let Some(d) = value.get_subtype() {
-				inherit_visibility(visibility,d);
-			}
 			move_field_attrs_to_subtype(attributes,value);
 			value.modify();
 		}
@@ -1948,10 +1943,13 @@ mod modification {
 		}
 		fn pub_all(&mut self) {
 			let Self {
+				ref mut visibility,
 				ref mut variants,
 				ref mut enclosed,
 				..
 			} = self;
+
+			*visibility = quote!(pub);
 			variants.collect_subtype()
 			.into_iter()
 			.chain( enclosed.iter_mut() )
@@ -2101,6 +2099,29 @@ mod modification {
 				Self::Type { default: Some(_), .. } => {}
 			}
 
+		}
+	}
+
+	impl EnumVariant {
+		/// 列挙体のバリアントに含まれるフィールドに可視性の情報が含まれていれば、取り除く
+		fn remove_vis_of_fields(&mut self) {
+			type F = Fields;
+			let vis_list = match &mut self.fields {
+				F::Unit => { return },
+				F::Unnamed(cf) => {
+					cf.fields.iter_mut()
+					.map(|f| &mut f.visibility )
+					.collect::<Vec<_>>()
+				},
+				F::Named(cf) => {
+					cf.fields.iter_mut()
+					.map(|f| &mut f.visibility )
+					.collect::<Vec<_>>()
+				}
+			};
+			for vis in vis_list.into_iter() {
+				*vis = TS::new();
+			}
 		}
 	}
 
