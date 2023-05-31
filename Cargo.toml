@@ -9,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 num = { version = "*", optional = true }
+rayon = { version = "*", optional = true }
 log = { version = "*", optional = true }
 time = { version = "*", optional = true, features = ["formatting", "local-offset", "std"] }
 once_cell = { version = "*", optional = true }
@@ -18,9 +19,11 @@ macros = { path = "macros" }
 crate-type = ["rlib"]
 
 [features]
-default = ["numerics","logging","time_description"]
+default = ["numerics","iterator","parallel","logging","time_description"]
 
 numerics = ["num"]
+iterator = []
+parallel = ["rayon"]
 logging = ["log"]
 time_description = ["time", "once_cell"]
 time_older = ["time_description"]

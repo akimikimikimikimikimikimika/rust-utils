@@ -9,7 +9,11 @@ mod options {
 	/// * `impl_zip_options!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	macro_rules! impl_zip_options {
 		( $( $t:ident $n:tt )+ ) => {
-			impl_zip_options!{@each | $( $t $n )+ }
+			mod impl_zip_options {
+				use super::*;
+
+				impl_zip_options!{@each | $( $t $n )+ }
+			}
 		};
 		(@each $( $t:ident $n:tt )* | $tn:ident $nn:tt $( $others:tt )* ) => {
 			impl_zip_options! {@each $( $t $n )* | }
@@ -53,7 +57,11 @@ mod tuple_to_array {
 	/// * `impl_tuple_to_array!(indices: 0 1 2 ... N )` と指定すれば、 `N` 個の要素まで対応する
 	macro_rules! impl_tuple_to_array {
 		(indices: $i0:tt $($i:tt)+ ) => {
-			impl_tuple_to_array! {@each T T $i0 | $($i),+ }
+			mod impl_tuple_to_array {
+				use super::*;
+
+				impl_tuple_to_array! {@each T T $i0 | $($i),+ }
+			}
 		};
 		(@each $t:ident $($tx:ident $x:tt),+ | $y0:tt $(,$y:tt)* ) => {
 			impl<$t> TupleToArray<$t,$y0> for ($($tx,)+) {
@@ -74,6 +82,7 @@ pub use tuple_to_array::*;
 
 
 mod array {
+	#[cfg(feature="iterator")]
 	use super::*;
 
 	/// インデクス付き配列を生成するトレイト
@@ -93,17 +102,24 @@ mod array {
 		}
 	}
 
+	#[cfg(feature="iterator")]
 	/// 配列のタプルからタプルの配列を生成するトレイト
 	pub trait ZipArrays<T> {
 		/// 同じ長さの固定長配列のタプル `([T1;N],[T2;N],...)` からタプルの配列 `[(T1,T2,...);N]` を生成します
 		fn zip(self) -> T;
 	}
 
+	#[cfg(feature="iterator")]
 	/// * 配列のタプルからタプルの配列を生成するトレイト `ZipArrays` の実装をまとめて行うマクロ
 	/// * `impl_zip_arrays!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	macro_rules! impl_zip_arrays {
 		( $( $t:ident $n:tt )+ ) => {
-			impl_zip_arrays! {@each | $( $t $n )+ }
+			mod impl_zip_arrays {
+				use super::*;
+				use crate::prelude::*;
+
+				impl_zip_arrays! {@each | $( $t $n )+ }
+			}
 		};
 		(@each $( $t:ident $n:tt )* | $tn:ident $nn:tt $( $others:tt )* ) => {
 			impl_zip_arrays! {@each $( $t $n )* | }
@@ -122,6 +138,7 @@ mod array {
 		};
 		(@each | ) => {};
 	}
+	#[cfg(feature="iterator")]
 	pub(crate) use impl_zip_arrays;
 
 }

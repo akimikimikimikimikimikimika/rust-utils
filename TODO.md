@@ -41,20 +41,34 @@ TODO
 		- [ ] リストの項目を1つずつ増やしながら呼び出す `macro_dup!` を実装
 - イテレータ関連
 	- [ ] 配列型の `Zip` に対して並列版を用意する
-	- [ ] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
-	- [ ] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
+	- [x] 並列の `Zip` の `IntoIter` に対して `zip_eq` を用意する
+	- [x] 直列、並列ともに `zip_longest` を実装する
+	- [ ] `zip_longest` として型のデフォルト値で補完するものを用意する
+	- [x] タプルに対する `CartesianProduct` の `DoubleEndedIterator` を用意する
 	- [ ] `CartesianProduct` の並列版を用意する
+	- [ ] 通常の `CartesianProduct` から double ended な `CartesianProduct` に変換できる `.into_double_ended_iter()` を用意
 	- [ ] 配列に対する `CartesianProduct` を用意する
 	- [ ] 作ったイテレータに対して `.nth()` や `.nth_back()` を実装する
 		- `Zip` に関しては含まれるイテレータに丸投げしたらいい
+		- `CartesianProduct` に関してはインデクスからより効率的なアルゴリズムを取り出せそう
+	- `ExtendedMap` の新しいイテレータ
+		- [ ] フォーマッタを実装したマップを用意する
+			- [このあたり](https://docs.rs/itertools/latest/itertools/trait.Itertools.html#method.format) を参考にしよう
+		- [ ] `Option<T>` をアイテムに持つイテレータ向けに `and_then`, `or_else`, `unwrap_or_else`, `unwrap_or`, `unwrap_or_default`, `map_or_else`, `map_or` を提供する
+		- [ ] `Result<T,E>` をアイテムに持つイテレータ向けに `and_then`, `or_else`, `unwrap_or_else`, `unwrap_or`, `unwrap_or_default`, `map_or_else`, `map_or` を提供する
 	- [ ] イテレータに `Clone` トレイトを実装する
-	- [ ] 直列版に対する `.zip_eq()` や `.zip_longest()` を用意する
+	- [x] 直列版に対する `.zip_eq()` や `.zip_longest()` を用意する
 	- [ ] `unzip` を用意できればいいかな
 	- [x] `Iterator.chain` に対して複数のイテレータをチェーンする関数を用意できればいいな
 	- [ ] `permutations` や `combination` のイテレータを用意する
 	- [ ] 他にも [ここ](https://docs.rs/itertools/0.10.5/itertools/trait.Itertools.html#method.cartesian_product) にある操作の幾つかに対応させる
 	- [ ] `par_for_each!` を実装した `Zip` に対応させる
 		- 個数に制限があるので、俊敏に振り分けるようにする
+- `ndarray` 関連
+	- `lanes` に対応する並列イテレータ
+	- 複数の要素の書き換え可能な形での参照が可能な `multi_get_mut` の実装
+	- スワップにより内部実装の次元間の並び替えが行える関数
+		- これは難しいかな...
 - その他の新機能
 	- [ ] アーカイブ形式の一般化
 		- アーカイブからアイテムを削除する機能とか

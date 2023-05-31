@@ -96,7 +96,11 @@ mod min_max {
 	/// * `impl_min_max!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
 	macro_rules! impl_min_max {
 		(indices: $($i:tt)+ ) => {
-			impl_min_max! {@each T | $($i),+ }
+			mod impl_min_max {
+				use super::*;
+
+				impl_min_max! {@each T | $($i),+ }
+			}
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
 			impl_min_max! {@each $t $($tx $x),* | }
