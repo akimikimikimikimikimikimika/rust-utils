@@ -1,7 +1,7 @@
 use super::*;
 
 /// `hypot` の拡張
-mod hypot_extension {
+pub mod hypot {
 	use super::*;
 
 	compose_struct! {
@@ -28,18 +28,19 @@ mod hypot_extension {
 	}
 
 	/// * タプル `(T,T,...)` の各要素に対して、 hypot を計算するトレイト `HypotForTuple` の実装をまとめて行うマクロ
-	/// * `impl_hypot!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
-	macro_rules! impl_hypot {
+	/// * `implement!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! implement {
 		(indices: $($i:tt)+ ) => {
 			mod impl_hypot {
 				use super::*;
+				use crate::numerics::primitive_function_extensions::hypot::*;
 
-				impl_hypot! {@each T | $($i),+ }
+				implement! {@each T | $($i),+ }
 			}
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
-			impl_hypot! {@each $t $($tx $x),* | }
-			impl_hypot! {@each $t $($tx $x,)* $t $y0 | $($y),* }
+			implement! {@each $t $($tx $x),* | }
+			implement! {@each $t $($tx $x,)* $t $y0 | $($y),* }
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | ) => {
 			impl<$t:Float> HypotForTuple<$t> for ($t,$($tx),*) {
@@ -50,18 +51,16 @@ mod hypot_extension {
 			}
 		};
 	}
-	pub(crate) use impl_hypot;
+	pub(crate) use implement;
 
 }
-pub use hypot_extension::*;
 
 
 
 /// `mul_add` の拡張
-mod mul_add_extension {
+pub mod mul_add {
 	use super::*;
-	use primitive_functions::mul_add;
-	use primitive_functions::float_misc::MulAdd;
+	use crate::numerics::primitive_functions::float_misc::MulAdd;
 
 	/// `mul_add` を複数個の要素に拡張するトレイト
 	pub trait MulAddExtension<T> {
@@ -85,14 +84,13 @@ mod mul_add_extension {
 	}
 
 }
-pub use mul_add_extension::*;
 
 
 
 /// 多項式の計算を効率よく行う `eval_poly` を定義するモジュール
-mod evaluate_polynomials {
+pub mod evaluate_polynomials {
 	use super::*;
-	use primitive_functions::float_misc::MulAdd;
+	use crate::numerics::primitive_functions::float_misc::*;
 	type C<T> = Complex<T>;
 
 	// 型に合わせた実装部
@@ -101,7 +99,6 @@ mod evaluate_polynomials {
 	fn eval_poly_real_real<'c,F>(x:F,coeffs:&'c [F]) -> F
 	where F: Float + MulAdd
 	{
-		use primitive_functions::mul_add;
 
 		let mut iter = coeffs.iter().rev();
 		// 最高次の値を取り出す
@@ -119,7 +116,6 @@ mod evaluate_polynomials {
 	fn eval_poly_real_complex<'c,F>(x:F,coeffs:&'c [C<F>]) -> C<F>
 	where F: Float + MulAdd
 	{
-		use primitive_functions::mul_add;
 
 		let mut iter = coeffs.iter().rev();
 		// 最高次の値を取り出す
@@ -138,7 +134,6 @@ mod evaluate_polynomials {
 	fn eval_poly_complex_complex<'c,F>(z:C<F>,coeffs:&'c [C<F>]) -> C<F>
 	where F: Float + MulAdd, f32: Into<F>
 	{
-		use primitive_functions::mul_add;
 
 		// 入力した変数 z = x+iy に対して p = 2x, q = - (x²+y²) を計算する
 		let C { re: x,im: y } = z;
@@ -176,7 +171,6 @@ mod evaluate_polynomials {
 	fn eval_poly_complex_real<'c,F>(z:C<F>,coeffs:&'c [F]) -> C<F>
 	where F: Float + MulAdd, f32: Into<F>
 	{
-		use primitive_functions::mul_add;
 
 		// 入力した変数 z = x+iy に対して p = 2x, q = - (x²+y²) を計算する
 		let C { re: x,im: y } = z;
@@ -249,4 +243,14 @@ mod evaluate_polynomials {
 	{ <[C]>::eval_poly(coeffs,x) }
 
 }
-pub use evaluate_polynomials::eval_poly;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		hypot::{ HypotForArray, HypotForTuple },
+		mul_add::MulAddExtension,
+		evaluate_polynomials::eval_poly
+	};
+}

@@ -3,20 +3,22 @@ use super::*;
 
 
 /// 標準の複合代入演算子と同様の機能を幾つかの演算に適用する
-mod operate_and_assign {
-	use super::*;
-
-	/// ブール値の and/or 演算子の複合代入版
-	pub trait AndOrAssign {
+pub mod operate_and_assign {
+	/// ブール値の演算子の複合代入版
+	pub trait BoolAssign {
 		fn and_assign(&mut self,rhs:Self);
 		fn or_assign(&mut self,rhs:Self);
+		fn not(&mut self);
 	}
-	impl AndOrAssign for bool {
+	impl BoolAssign for bool {
 		fn and_assign(&mut self,rhs:Self) {
 			*self = (*self) && rhs
 		}
 		fn or_assign(&mut self,rhs:Self) {
 			*self = (*self) || rhs
+		}
+		fn not(&mut self) {
+			*self = ! (*self)
 		}
 	}
 
@@ -45,8 +47,15 @@ mod operate_and_assign {
 		/// もう一方の値と比較し、大きい方を代入する
 		fn max_assign(&mut self,rhs:Self);
 	}
-	#[cfg(feature="numerics")]
-	impl<T:Float> MinMaxAssignForFloat for T {
+	impl MinMaxAssignForFloat for f32 {
+		fn min_assign(&mut self,rhs:Self) {
+			*self = (*self).min(rhs);
+		}
+		fn max_assign(&mut self,rhs:Self) {
+			*self = (*self).max(rhs);
+		}
+	}
+	impl MinMaxAssignForFloat for f64 {
 		fn min_assign(&mut self,rhs:Self) {
 			*self = (*self).min(rhs);
 		}
@@ -56,12 +65,11 @@ mod operate_and_assign {
 	}
 
 }
-pub use operate_and_assign::*;
 
 
 
 /// `Ord` に従う型の最大/最小を多数の要素に対して実行する
-mod min_max {
+pub mod min_max {
 
 	/// 最大/最小に関するトレイトをまとめて定義する
 	macro_rules! trait_def {
@@ -93,18 +101,19 @@ mod min_max {
 	}
 
 	/// * タプル `(T,T,...)` の各要素に対して、最大/最小を決定するトレイト `MinMaxTuple` の実装をまとめて行うマクロ
-	/// * `impl_min_max!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
-	macro_rules! impl_min_max {
+	/// * `implement!(indices: 1 2 ... (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! implement {
 		(indices: $($i:tt)+ ) => {
 			mod impl_min_max {
 				use super::*;
+				use crate::numerics::basic_operations::min_max::*;
 
-				impl_min_max! {@each T | $($i),+ }
+				implement! {@each T | $($i),+ }
 			}
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | $y0:tt $(,$y:tt)* ) => {
-			impl_min_max! {@each $t $($tx $x),* | }
-			impl_min_max! {@each $t $($tx $x,)* $t $y0 | $($y),* }
+			implement! {@each $t $($tx $x),* | }
+			implement! {@each $t $($tx $x,)* $t $y0 | $($y),* }
 		};
 		(@each $t:ident $($tx:ident $x:tt),* | ) => {
 			impl<$t> MinMaxTuple<$t> for ($t,$($tx),*) where $t: Ord {
@@ -117,16 +126,15 @@ mod min_max {
 			}
 		};
 	}
-	pub(crate) use impl_min_max;
+	pub(crate) use implement;
 
 }
-pub use min_max::*;
 
 
 
 #[cfg(feature="numerics")]
 /// `Float` に従う型の最大/最小を多数の要素でも使えるようにする。 NaN の伝播の仕方に合わせて複数のメソッドを用意する。
-mod float_min_max {
+pub mod float_min_max {
 	use super::*;
 
 	compose_struct! {
@@ -190,22 +198,41 @@ mod float_min_max {
 	}
 
 }
-#[cfg(feature="numerics")]
-pub use float_min_max::*;
 
 
 
 #[cfg(feature="numerics")]
 /// ある型に対して取りうる最大/最小の値を得る。
-mod maximum_minimum {
+pub mod maximum_minimum {
+	use num::Bounded;
+
 	/// 指定した型で取りうる最大の値を返します
-	pub fn maximum_value<T>() -> T where T: num::Bounded {
+	pub fn maximum_value<T>() -> T where T: Bounded {
 		T::max_value()
 	}
 	/// 指定した型で取りうる最小の値を返します
-	pub fn minimum_value<T>() -> T where T: num::Bounded {
+	pub fn minimum_value<T>() -> T where T: Bounded {
 		T::min_value()
 	}
 }
-#[cfg(feature="numerics")]
-pub use maximum_minimum::*;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		operate_and_assign::{
+			BoolAssign,
+			MinMaxAssignForOrd,
+			MinMaxAssignForFloat
+		},
+		min_max::{ MinMaxArray, MinMaxTuple }
+	};
+	#[cfg(feature="numerics")]
+	pub use super::{
+		float_min_max::FloatMinMax,
+		maximum_minimum::{
+			maximum_value, minimum_value
+		}
+	};
+}

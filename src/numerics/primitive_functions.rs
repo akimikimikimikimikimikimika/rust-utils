@@ -3,7 +3,7 @@ type C<T> = Complex<T>;
 type R<T> = num::rational::Ratio<T>;
 
 /// 指数関数や対数関数を定義するモジュール
-mod exp_log {
+pub mod exp_log {
 	use super::*;
 
 	/// `Float` と `Complex` に対して `log` に対応するトレイト
@@ -64,10 +64,11 @@ mod exp_log {
 	functions!( log2 log10 ln_1p exp2 exp_m1 );
 
 }
-pub use exp_log::{log,ln,log2,log10,ln_1p,exp,exp2,exp_m1};
+
+
 
 /// 2乗根、3乗根、n乗根を定義するモジュール
-pub(crate) mod root {
+pub mod root {
 	use super::*;
 
 	/// `Float` と `Complex` に対して `sqrt`, `cbrt` に対応するトレイト
@@ -186,13 +187,14 @@ pub(crate) mod root {
 	pub fn root_all<INPUT,ROOT,const N:usize>(x:INPUT) -> [ROOT;N] where INPUT: RootAll<ROOT> { x.root_all::<N>() }
 
 }
-pub use root::{sqrt,cbrt,sqrt_all,cbrt_all,root_all};
+
+
 
 /// 三角関数に対する関数定義をまとめて行うマクロ
 macro_rules! trig {
 	( func($($f:ident)+) types($($t:ty),+) ) => {
 		/// 三角関数を定義するモジュール
-		pub(crate) mod trigonometric {
+		pub mod trigonometric {
 			use super::*;
 
 			/// `Float` と `Complex` に対して諸々の三角関数に対応するトレイト
@@ -211,8 +213,11 @@ macro_rules! trig {
 					x.$f()
 				}
 			)+
+
+			pub(super) mod for_prelude {
+				pub use super::{$($f),+};
+			}
 		}
-		pub use trigonometric::{$($f),+};
 	};
 	( name($n:ident) func($($f:ident)+) types($t0:ty $(,$t:ty)+) ) => {
 		trig!{ name($n) func($($f)+) types($t0) }
@@ -230,11 +235,13 @@ trig!{
 	types(f64,f32,C<f64>,C<f32>)
 }
 
+
+
 /// 浮動小数型のみに対応した関数の定義をまとめて行うマクロ
 macro_rules! misc {
 	( $( $name:ident ( $arg0:ident $(,$args:ident)* ) as $tr:ident )+ ) => {
 		/// 浮動小数型のみに対応した細々とした関数を定義するモジュール
-		pub(crate) mod float_misc {
+		pub mod float_misc {
 			use super::*;
 
 			$(
@@ -259,8 +266,11 @@ macro_rules! misc {
 					$arg0.call($($args),*)
 				}
 			)+
+
+			pub(super) mod for_prelude {
+				pub use super::{$($name),+};
+			}
 		}
-		pub use float_misc::{$($name),+};
 	};
 }
 misc! {
@@ -269,8 +279,10 @@ misc! {
 	mul_add(a,b,c) as MulAdd
 }
 
+
+
 /// `clamp` 関数を拡張した形で実装するモジュール
-mod clamp {
+pub mod clamp {
 	use super::*;
 	use std::cmp::Ordering;
 
@@ -324,10 +336,11 @@ mod clamp {
 	}
 
 }
-pub use clamp::clamp;
+
+
 
 /// `power` 関数を定義するモジュール
-mod power {
+pub mod power {
 	use super::*;
 	use std::{
 		ops::Neg,
@@ -507,4 +520,16 @@ mod power {
 	}
 
 }
-pub use power::power;
+
+
+
+pub(crate) mod for_prelude {
+	pub use super::{
+		exp_log::{log,ln,log2,log10,ln_1p,exp,exp2,exp_m1},
+		root::{sqrt,cbrt,sqrt_all,cbrt_all,root_all},
+		trigonometric::for_prelude::*,
+		float_misc::for_prelude::*,
+		clamp::clamp,
+		power::power
+	};
+}

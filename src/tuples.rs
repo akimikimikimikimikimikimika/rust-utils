@@ -1,4 +1,4 @@
-mod options {
+pub mod options {
 
 	pub trait ZipOptions<T> {
 		/// 複数の Option 型を含む型を1つの Option 型に変換します。要素のうち1つでも None があれば None になります
@@ -6,18 +6,19 @@ mod options {
 	}
 
 	/// * `(Option<T1>,Option<T2>,...)` を `Option<(T1,T2,...)>` に変換するトレイト `ZipOptions` の実装をまとめて行うマクロ
-	/// * `impl_zip_options!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
-	macro_rules! impl_zip_options {
+	/// * `implement!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! implement {
 		( $( $t:ident $n:tt )+ ) => {
 			mod impl_zip_options {
 				use super::*;
+				use crate::tuples::options::*;
 
-				impl_zip_options!{@each | $( $t $n )+ }
+				implement!{@each | $( $t $n )+ }
 			}
 		};
 		(@each $( $t:ident $n:tt )* | $tn:ident $nn:tt $( $others:tt )* ) => {
-			impl_zip_options! {@each $( $t $n )* | }
-			impl_zip_options! {@each $( $t $n )* $tn $nn | $( $others )* }
+			implement! {@each $( $t $n )* | }
+			implement! {@each $( $t $n )* $tn $nn | $( $others )* }
 		};
 		(@each $( $t:ident $n:tt )+ | ) => {
 			impl<$($t),+> ZipOptions<($($t,)+)> for ($(Option<$t>,)+) {
@@ -28,7 +29,7 @@ mod options {
 		};
 		(@each | ) => {};
 	}
-	pub(crate) use impl_zip_options;
+	pub(crate) use implement;
 
 	impl<T,const N:usize> ZipOptions<[T;N]> for [Option<T>;N] {
 		fn zip_options(self) -> Option<[T;N]> {
@@ -40,12 +41,11 @@ mod options {
 	}
 
 }
-pub use options::*;
 
 
 
 /// 同一要素からなるタプル型を配列に変換するモジュール
-mod tuple_to_array {
+pub mod tuple_to_array {
 
 	/// タプルを配列に変換します
 	pub trait TupleToArray<T,const N:usize> {
@@ -54,13 +54,14 @@ mod tuple_to_array {
 	}
 
 	/// * タプルを配列に変換するトレイト `TupleToArray` の実装をまとめて行うマクロ
-	/// * `impl_tuple_to_array!(indices: 0 1 2 ... N )` と指定すれば、 `N` 個の要素まで対応する
-	macro_rules! impl_tuple_to_array {
+	/// * `implement!(indices: 0 1 2 ... N )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! implement {
 		(indices: $i0:tt $($i:tt)+ ) => {
 			mod impl_tuple_to_array {
 				use super::*;
+				use crate::tuples::tuple_to_array::*;
 
-				impl_tuple_to_array! {@each T T $i0 | $($i),+ }
+				implement! {@each T T $i0 | $($i),+ }
 			}
 		};
 		(@each $t:ident $($tx:ident $x:tt),+ | $y0:tt $(,$y:tt)* ) => {
@@ -70,20 +71,17 @@ mod tuple_to_array {
 				}
 			}
 
-			impl_tuple_to_array! {@each $t $($tx $x,)+ $t $y0 | $($y),* }
+			implement! {@each $t $($tx $x,)+ $t $y0 | $($y),* }
 		};
 		(@each $t:ident $($tx:ident $x:tt),+ | ) => {};
 	}
-	pub(crate) use impl_tuple_to_array;
+	pub(crate) use implement;
 
 }
-pub use tuple_to_array::*;
 
 
 
-mod array {
-	#[cfg(feature="iterator")]
-	use super::*;
+pub mod array {
 
 	/// インデクス付き配列を生成するトレイト
 	pub trait WithIndex<T,const N:usize> {
@@ -111,19 +109,19 @@ mod array {
 
 	#[cfg(feature="iterator")]
 	/// * 配列のタプルからタプルの配列を生成するトレイト `ZipArrays` の実装をまとめて行うマクロ
-	/// * `impl_zip_arrays!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
-	macro_rules! impl_zip_arrays {
+	/// * `implement!( T0 0 T1 1 T2 2 ... T(N-1) (N-1) )` と指定すれば、 `N` 個の要素まで対応する
+	macro_rules! implement {
 		( $( $t:ident $n:tt )+ ) => {
 			mod impl_zip_arrays {
 				use super::*;
-				use crate::prelude::*;
+				use crate::tuples::array::*;
 
-				impl_zip_arrays! {@each | $( $t $n )+ }
+				implement! {@each | $( $t $n )+ }
 			}
 		};
 		(@each $( $t:ident $n:tt )* | $tn:ident $nn:tt $( $others:tt )* ) => {
-			impl_zip_arrays! {@each $( $t $n )* | }
-			impl_zip_arrays! {@each $( $t $n )* $tn $nn | $( $others )* }
+			implement! {@each $( $t $n )* | }
+			implement! {@each $( $t $n )* $tn $nn | $( $others )* }
 		};
 		(@each $( $t:ident $n:tt )+ | ) => {
 			impl<$($t),+,const N:usize> ZipArrays<[($($t,)+);N]> for ($([$t;N],)+) where $($t: std::fmt::Debug),+ {
@@ -139,7 +137,17 @@ mod array {
 		(@each | ) => {};
 	}
 	#[cfg(feature="iterator")]
-	pub(crate) use impl_zip_arrays;
+	pub(crate) use implement;
 
 }
-pub use array::*;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		options::ZipOptions,
+		tuple_to_array::TupleToArray,
+		array::{ WithIndex, ZipArrays }
+	};
+}

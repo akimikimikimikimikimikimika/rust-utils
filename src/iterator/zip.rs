@@ -971,7 +971,6 @@ pub(crate) mod len_equality {
 /// イテレータの配列を zip する関数を含むモジュール
 pub mod for_iters_array {
 	use super::*;
-	use crate::prelude::*;
 
 	/// 複数のイテレータの配列をベクタのイテレータに変換するトレイト
 	pub struct Zip<I> {

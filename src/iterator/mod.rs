@@ -1,30 +1,37 @@
 use super::*;
-pub(crate) use std::iter::{
-	Iterator,
-	ExactSizeIterator,
-	DoubleEndedIterator,
-	FusedIterator
-};
-#[cfg(feature="parallel")]
-pub(crate) use rayon::iter::{
-	plumbing as rayon_plumbing,
-	ParallelIterator,
-	IndexedParallelIterator,
-	IntoParallelIterator
-};
 
-
-
-#[cfg(feature="iterator")]
 pub mod zip;
-#[cfg(feature="iterator")]
+
 pub mod product;
 
-#[cfg(feature="iterator")]
 pub mod chain;
 
-#[cfg(feature="iterator")]
 pub mod extended_map;
 
-#[cfg(feature="iterator")]
 pub mod misc;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		extended_map::for_prelude::*,
+		zip::for_prelude::*,
+		product::for_prelude::*,
+		chain::for_prelude::*,
+	};
+
+	pub(crate) use std::iter::{
+		Iterator,
+		ExactSizeIterator,
+		DoubleEndedIterator,
+		FusedIterator
+	};
+	#[cfg(feature="parallel")]
+	pub(crate) use rayon::iter::{
+		plumbing as rayon_plumbing,
+		ParallelIterator,
+		IndexedParallelIterator,
+		IntoParallelIterator
+	};
+}

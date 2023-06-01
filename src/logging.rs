@@ -6,7 +6,7 @@ use std::{
 };
 
 /// Result 型や Option 型をアンラップして、エラーをログとして出力する
-mod unwrap_result_option {
+pub mod unwrap_result_option {
 	use super::*;
 
 	#[cfg(feature="logging")]
@@ -79,13 +79,11 @@ mod unwrap_result_option {
 	}
 
 }
-pub use unwrap_result_option::*;
 
 
 
-#[macro_use]
 /// エラー出力により終了するモジュール
-mod fatal_error {
+pub mod fatal_error {
 	use super::*;
 
 	#[cfg(feature="logging")]
@@ -107,21 +105,21 @@ mod fatal_error {
 		exit(1);
 	}
 
-	#[macro_export]
+	#[allow(unused_macros)]
 	/// エラーをマクロ形式で展開する
 	macro_rules! fatal_error {
 		($($arg:tt)+) => {
 			fatal_error(&format!($($arg)+));
 		};
 	}
+	pub use fatal_error as fatal_error_fmt;
 
 }
-pub use fatal_error::*;
 
 
 
 /// Result 型の結果を集約する
-mod collect_result {
+pub mod collect_result {
 	use super::*;
 	use std::{
 		error::Error,
@@ -154,4 +152,14 @@ mod collect_result {
 	}
 
 }
-pub use collect_result::*;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		unwrap_result_option::*,
+		fatal_error::*,
+		collect_result::*
+	};
+}

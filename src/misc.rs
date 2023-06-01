@@ -3,7 +3,7 @@ use super::*;
 
 
 /// 型に関する取り扱いを行うモジュール
-mod types {
+pub mod types {
 	use super::*;
 
 	use std::{
@@ -18,15 +18,12 @@ mod types {
 		/// `Path` になりそうな型を受け取るためのジェネリックな型
 		pub trait AnyPath = AsRef<Path> + Display;
 	}
-
 }
-pub use types::*;
 
 
 
 /// 簡単に所要時間を測定するタイマーモジュール
-#[allow(dead_code)]
-mod instant_timer {
+pub mod instant_timer {
 	use super::*;
 
 	use std::time::SystemTime;
@@ -65,13 +62,13 @@ mod instant_timer {
 	}
 
 }
-pub use instant_timer::*;
 
 
 
 #[cfg(feature="time_description")]
 /// 時刻を取得するモジュール
 mod time_description {
+	use std::time::SystemTime;
 	extern crate once_cell;
 	use once_cell::sync::Lazy;
 	extern crate time;
@@ -114,7 +111,7 @@ mod time_description {
 		fn description(&self) -> String;
 	}
 
-	impl DescribeTime for std::time::SystemTime {
+	impl DescribeTime for SystemTime {
 		fn description(&self) -> String {
 			DateTime::from(self.clone())
 			.to_offset(*OFFSET)
@@ -124,5 +121,15 @@ mod time_description {
 	}
 
 }
-#[cfg(feature="time_description")]
-pub use time_description::*;
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		types::{ AnyStr, AnyPath },
+		instant_timer::InstantTimer,
+	};
+	#[cfg(feature="time_description")]
+	pub use super::time_description::*;
+}

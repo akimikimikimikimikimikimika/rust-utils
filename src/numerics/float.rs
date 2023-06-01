@@ -49,7 +49,7 @@ pub use categorize::*;
 
 
 /// 浮動小数を丸めるメソッドを提供するモジュール
-mod rounding {
+pub mod rounding {
 	use super::*;
 
 	compose_struct! {
@@ -389,7 +389,16 @@ mod rounding {
 	}
 
 }
-pub use rounding::{
-	Rounding as FloatRounding,
-	Strategy as FloatRoundingStrategy
-};
+
+
+
+/// このモジュールからクレートの `prelude` でアクセスできるようにするアイテムをまとめたもの
+pub(crate) mod for_prelude {
+	pub use super::{
+		categorize::{ FloatCategory, FloatCategorize },
+		rounding::{
+			Rounding as FloatRounding,
+			Strategy as FloatRoundingStrategy
+		}
+	};
+}

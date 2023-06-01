@@ -1,23 +1,37 @@
-mod numerics;
-pub use numerics::*;
+pub mod numerics;
 
 mod logging;
 pub use logging::*;
 
-mod tuples;
-pub use tuples::*;
+pub mod tuples;
 
 #[cfg(feature="iterator")]
 pub mod iterator;
-#[cfg(feature="iterator")]
-pub use iterator::*;
 
 mod misc;
 pub use misc::*;
 
-extern crate macros;
-pub use macros::*;
-
-pub mod prelude;
+pub mod macros {
+	extern crate macros;
+	pub use macros::*;
+}
 
 mod macro_expansion;
+
+
+
+/// このライブラリで定義された関数や型、トレイト、マクロなどにまとめてアクセスできるモジュール
+/// `use utils::prelude::*;` とすることで全てのリソースがインポートされる
+pub mod prelude {
+	pub use super::{
+		numerics::for_prelude::*,
+		tuples::for_prelude::*,
+		logging::for_prelude::*,
+		misc::for_prelude::*,
+		macros::*
+	};
+	#[cfg(feature="iterator")]
+	pub use super::iterator::for_prelude::*;
+}
+/// このクレート内では、クレートで定義されたリソースを展開する
+pub(crate) use prelude::*;
