@@ -3,7 +3,7 @@ use super::*;
 
 
 /// 有限回のみ繰り返すイテレータを生成するモジュール
-mod cycle_n {
+pub mod cycle_n {
 	use super::compose_struct;
 
 	compose_struct! {
@@ -62,12 +62,11 @@ mod cycle_n {
 	}
 
 }
-pub use cycle_n::IteratorCycleNExtension;
 
 
 
 /// イテレータに最大/最小を同時に計算するメソッドを追加するモジュール
-mod min_max {
+pub mod min_max {
 	use super::*;
 	use std::cmp::{
 		Ordering,Ord,
@@ -111,4 +110,61 @@ mod min_max {
 	}
 
 }
-pub use min_max::IteratorMinMaxExtension;
+
+
+
+/// 遅延評価に基づいて1個或いは0個の要素を返すイテレータを提供するモジュール
+mod one_or_zero {
+	use super::*;
+	use std::marker::PhantomData;
+
+	/// 遅延評価に基づいて1個或いは0個の要素を返すイテレータ
+	pub struct OneOrZero<T,F> {
+		func: Option<F>,
+		phantom: PhantomData<T>
+	}
+
+	impl<T,F> Iterator for OneOrZero<T,F>
+	where F: FnOnce() -> Option<T>
+	{
+		type Item = T;
+		fn next(&mut self) -> Option<Self::Item> {
+			let f_opt = self.func.take();
+			f_opt.and_then(|f| f() )
+		}
+		fn size_hint(&self) -> (usize, Option<usize>) {
+			if self.func.is_some() { (0,Some(1)) }
+			else { (0,Some(0)) }
+		}
+	}
+
+	impl<T,F> DoubleEndedIterator for OneOrZero<T,F>
+	where F: FnOnce() -> Option<T>
+	{
+		fn next_back(&mut self) -> Option<Self::Item> {
+			let f_opt = self.func.take();
+			f_opt.and_then(|f| f() )
+		}
+	}
+
+	impl<T,F> FusedIterator for OneOrZero<T,F>
+	where F: FnOnce() -> Option<T> {}
+
+	/// 渡された関数を実行して `Some(T)` なら1個、 `None` なら 0 個の要素を返すイテレータを生成します
+	pub fn one_or_zero<T,F>(f:F) -> OneOrZero<T,F>
+	where F: FnOnce() -> Option<T>
+	{
+		OneOrZero { func: Some(f), phantom: PhantomData }
+	}
+
+}
+
+
+
+pub(crate) mod for_prelude {
+	pub use super::{
+		cycle_n::IteratorCycleNExtension,
+		min_max::IteratorMinMaxExtension,
+		one_or_zero::one_or_zero
+	};
+}

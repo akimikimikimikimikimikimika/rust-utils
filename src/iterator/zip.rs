@@ -431,31 +431,30 @@ pub mod for_parallel_iters {
 	}
 
 	/// `ZipCallback` の `items` で保持する値の種別を定める型
-	mod zip_callback_types {
+	pub(crate) mod zip_callback_types {
 		/// `ZipCallback` の引数として、イテレータを保持する
-		pub(crate) struct ZcIter<I> {
+		pub(crate) struct Iter<I> {
 			pub(crate) iter: I
 		}
 		/// `ZipCallback` の引数として、プロデューサを保持する
-		pub(crate) struct ZcProd<P> {
+		pub(crate) struct Prod<P> {
 			pub(crate) prod: P
 		}
 		/// `ZipCallback` の引数として、デフォルト値とイテレータを保持する
-		pub(crate) struct ZcValIter<V,I> {
+		pub(crate) struct ValIter<V,I> {
 			pub(crate) val: V,
 			pub(crate) iter: I
 		}
 		/// `ZipCallback` の引数として、デフォルト値を保持する
-		pub(crate) struct ZcVal<V> {
+		pub(crate) struct Val<V> {
 			pub(crate) val: V
 		}
 		/// `ZipCallback` の引数として、デフォルト値とプロデューサを保持する
-		pub(crate) struct ZcValProd<V,P> {
+		pub(crate) struct ValProd<V,P> {
 			pub(crate) val: V,
 			pub(crate) prod: P
 		}
 	}
-	pub(crate) use zip_callback_types::*;
 
 	pub(crate) struct ZipProducer<P> {
 		pub(crate) producers: P
@@ -478,6 +477,7 @@ pub mod for_parallel_iters {
 				use super::*;
 				use crate::iterator::zip::{
 					for_parallel_iters::*,
+					for_parallel_iters::zip_callback_types as zc,
 					for_iters::{
 						Zip as ZipSerial,
 						ZipLongest as ZipLongestSerial
@@ -713,7 +713,7 @@ pub mod for_parallel_iters {
 						child_callback,
 						items: (
 							(),
-							$( ZcIter { iter: self.iters.$nf }, )*
+							$( zc::Iter { iter: self.iters.$nf }, )*
 						)
 					})
 				}
@@ -747,8 +747,8 @@ pub mod for_parallel_iters {
 					.with_producer(ZipCallback {
 						child_callback,
 						items: (
-							ZcVal { val: self.values.$n },
-							$( ZcValIter {
+							zc::Val { val: self.values.$n },
+							$( zc::ValIter {
 								val: self.values.$nf,
 								iter: self.iters.$nf
 							}, )*
@@ -771,7 +771,7 @@ pub mod for_parallel_iters {
 
 			impl< CCB $(,$pp)*, $in$(,$if)*, $($tp,)*$t,$tn$(,$tf)* >
 			ProducerCallback<$t>
-			for ZipCallback<CCB,( $( ZcProd<$pp>, )* (), ZcIter<$in> $( ,ZcIter<$if> )* )>
+			for ZipCallback<CCB,( $( zc::Prod<$pp>, )* (), zc::Iter<$in> $( ,zc::Iter<$if> )* )>
 			where
 				CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>,
 				$( $pp: Producer<Item=$tp>, )*
@@ -788,7 +788,7 @@ pub mod for_parallel_iters {
 						child_callback: self.child_callback,
 						items: (
 							$( self.items.$np, )*
-							ZcProd { prod: parent_producer },
+							zc::Prod { prod: parent_producer },
 							(),
 							$( self.items.$nf, )*
 						)
@@ -798,7 +798,7 @@ pub mod for_parallel_iters {
 
 			impl< CCB $(,$pp)*, $in$(,$if)*, $($tp,)*$t,$tn$(,$tf)* >
 			ProducerCallback<$t>
-			for ZipCallback<CCB,( $( ZcValProd<$tp,$pp>, )* ZcVal<$t>, ZcValIter<$tn,$in> $( ,ZcValIter<$tf,$if> )* )>
+			for ZipCallback<CCB,( $( zc::ValProd<$tp,$pp>, )* zc::Val<$t>, zc::ValIter<$tn,$in> $( ,zc::ValIter<$tf,$if> )* )>
 			where
 				CCB: ProducerCallback<($($tp,)*$t,$tn$(,$tf)*)>,
 				$( $pp: Producer<Item=$tp>, )*
@@ -818,11 +818,11 @@ pub mod for_parallel_iters {
 						child_callback: self.child_callback,
 						items: (
 							$( self.items.$np, )*
-							ZcValProd {
+							zc::ValProd {
 								val: self.items.$n.val,
 								prod: parent_producer
 							},
-							ZcVal { val: self.items.$nn.val },
+							zc::Val { val: self.items.$nn.val },
 							$( self.items.$nf, )*
 						)
 					} )
@@ -842,7 +842,7 @@ pub mod for_parallel_iters {
 			$i:ident $p:ident $t:ident $n:tt
 		) => {
 
-			impl< CCB, $($pp,)* $($tp,)*$t > ProducerCallback<$t> for ZipCallback<CCB, ( $( ZcProd<$pp>, )* (), ) >
+			impl< CCB, $($pp,)* $($tp,)*$t > ProducerCallback<$t> for ZipCallback<CCB, ( $( zc::Prod<$pp>, )* (), ) >
 			where
 				CCB: ProducerCallback<($($tp,)*$t,)>,
 				$( $pp: Producer<Item=$tp>, )*
@@ -861,7 +861,7 @@ pub mod for_parallel_iters {
 				}
 			}
 
-			impl< CCB, $($pp,)* $($tp,)*$t > ProducerCallback<$t> for ZipCallback<CCB, ( $( ZcValProd<$tp,$pp>, )* ZcVal<$t>, ) >
+			impl< CCB, $($pp,)* $($tp,)*$t > ProducerCallback<$t> for ZipCallback<CCB, ( $( zc::ValProd<$tp,$pp>, )* zc::Val<$t>, ) >
 			where
 				CCB: ProducerCallback<($($tp,)*$t,)>,
 				$( $pp: Producer<Item=$tp>, )*

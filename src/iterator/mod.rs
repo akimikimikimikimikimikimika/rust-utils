@@ -19,6 +19,7 @@ pub(crate) mod for_prelude {
 		zip::for_prelude::*,
 		product::for_prelude::*,
 		chain::for_prelude::*,
+		misc::for_prelude::*
 	};
 
 	pub(crate) use std::iter::{

@@ -9,20 +9,21 @@ use super::*;
 pub mod for_serial_iter {
 	use super::*;
 
-	/// イテレータを写像するイテレータ
+	/// 直列イテレータの写像関数を定義するトレイトです。写像の入力型を型パラメータ `Input` で指定して、連想型 `Output` で写像関数の出力型を定めます。 `call_mut` メソッドを実装して具体的な処理内容を指定します。
+	pub trait ExtendedMapFn<Input> {
+		/// 写像関数の出力型
+		type Output;
+		/// 直列のイテレータに対して写像の仕方を定義するメソッドです。引数として `&mut self` を持つため、写像関数の保持するデータを書き換えることが可能です。例えばこのトレイトを実装した構造体でクロージャ `FnMut` を持ち `call_mut` 内で呼び出すことができます。
+		fn call_mut(&mut self,input:Input) -> Self::Output;
+	}
+	use ExtendedMapFn as MapFn;
+
+	/// イテレータを写像関数により写像するイテレータです。型パラメータとして写像元のイテレータ `I` と、写像関数 `F` を与えます。
 	pub struct ExtendedMap<I,F> {
 		pub(super) iter: I,
 		pub(super) map_fn: F
 	}
 	use ExtendedMap as Map;
-
-	/// イテレータの写像関数を定義するトレイト
-	pub trait ExtendedMapFn<Input> {
-		type Output;
-		/// 写像の仕方を定義するメソッド。外の変数をミュータブルにキャプチャしていても構わない
-		fn call_mut(&mut self,input:Input) -> Self::Output;
-	}
-	use ExtendedMapFn as MapFn;
 
 	impl<I,F> Iterator for Map<I,F>
 	where I: Iterator, F: MapFn<I::Item>
@@ -95,16 +96,17 @@ pub mod for_parallel_iter {
 	use super::*;
 	use rayon_plumbing::*;
 
-	// ここでは独自の ParallelIterator を定義する際の見本となるように、 ParallelIterator を構成する各要素のい意義が分かりやすいよう、多くのコメントを付している
+	// ここでは独自の ParallelIterator を定義する際の見本となるように、 ParallelIterator を構成する各要素の意義が分かりやすいよう、多くのコメントを付している
 
-	/// 並列イテレータの写像関数を定義するトレイト。利便性のために直列の写像関数のトレイトを継承しており、スレッド間のデータ移動にも対応していなければならない。
-	pub trait ExtendedMapFn<Input>: MapFnSerial<Input> + Sync + Send {
+	/// 並列イテレータの写像関数を定義するトレイトです。写像の入力型を型パラメータ `Input` で指定して、直列の場合の写像関数で定義された連想型 `Output` で写像関数の出力型を定めます。 `call` メソッドを実装して具体的な処理内容を指定します。
+	pub trait ExtendedMapFn<Input>: MapFnSerial<Input> + Send + Sync {
+		/// 並列のイテレータに対して写像の仕方を定義するメソッドです。
 		fn call(&self,input:Input) -> Self::Output;
 	}
 	use ExtendedMapFn as MapFn;
 	use for_serial_iter::ExtendedMapFn as MapFnSerial;
 
-	/// 並列イテレータを写像する並列イレテータ
+	/// 並列イテレータを写像関数により写像する並列イテレータです。型パラメータとして写像元のイテレータ `I` と、写像関数 `F` を与えます。
 	pub struct ExtendedMap<I,F> {
 		/// 1つ上の階層の `ParallelIterator`
 		pub(super) parent_iterator: I,
@@ -480,142 +482,201 @@ mod iter_impl {
 		ExtendedMapFn as ParallelMapFn
 	};
 
+	/// 簡単な表式で写像関数を定義するマクロ
 	macro_rules! make {
-		(
-			item_type: { $($it:tt)+ }
-			items: [ $($items:tt)+ ]
-		) => {
-			make!{@each
-				item_type: { $($it)+ }
-				items: [ $($items)+ ]
-				into_map_trait: {} into_map_impl: {}
-				into_parallel_map_trait: {} into_parallel_map_impl: {}
-			}
+		( [
+			$( $module_name:ident : {
+				item_type: { $($it:tt)+ }
+				items: [ $($items:tt)+ ]
+			} )+
+		] ) => {
+			make!{@each {
+				modules: [
+					$( {
+						name: $module_name
+						item_type: { $($it)+ }
+						items: [ $($items)+ ]
+						source: { use super::*; }
+						exports: [ ]
+						parallel_exports: [ ]
+					} )+
+				]
+				into_map: {
+					into_map_trait: {}
+					into_parallel_map_trait: {}
+				}
+			} }
 		};
-		(@each
-			item_type: { $($t:ident),+: $ti:ty }
-			items: [ {
-				name_fn: $nf:ident
-				name_iter_serial: $nis:ident
-				name_iter_parallel: $nip:ident
-				name_map_fn: $nmf:ident
-				$( desc: $desc:literal )?
-				$( params: [ $( $pi:tt: $pt:ident ),+ ] )?
-				$( phantom_params: [ $( $ppt:ident ),+ ] )?
-				$( type_params: [ $($tp:ident),+ ] )?
-				output_type: { $to:ty }
-				$( where_serial: { $($ws:tt)+ } )?
-				$( where_parallel: { $($wp:tt)+ } )?
-				call: { $si:ident, $ii:ident -> $($body:tt)+ }
-			} $($other_items:tt)* ]
-			into_map_trait: { $($im_t:tt)* }
-			into_map_impl: { $($im_i:tt)* }
-			into_parallel_map_trait: { $($ipm_t:tt)* }
-			into_parallel_map_impl: { $($ipm_i:tt)* }
-		) => {
-
-			$( #[doc=concat!(
-				"`",stringify!($nf),"()` にて生成されるイテレータを構成する `ExtendedMap` 向けの関数。", $desc
-			)] )?
-			pub struct $nmf
-			<$($($pt,)+)? $($($ppt,)+)?>
-			($($($pt,)+)? $($(PhantomData<$ppt>,)+)?);
-
-			impl<$($t,)+ $($($tp,)+)?> MapFn<$ti>
-			for $nmf <$($($pt,)+)? $($($ppt,)+)?>
-			$( where $($ws)+ )?
-			{
-				type Output = $to;
-				fn call_mut(&mut $si,$ii:$ti) -> $to {
-					$($body)+
-				}
+		(@each {
+			modules: [ {
+				// モジュールの名前
+				name: $mn:ident
+				// このモジュール内の写像関数が対象とする写像元イテレータのデータ型
+				// `(型パラメータ),+:(入力の型)` という形で定義する
+				item_type: { $($t:ident),+: $ti:ty }
+				// モジュールに含まれる写像関数
+				items: [ {
+					// `IntoMap`, `IntoParallelMap` におけるイテレータを生成する関数名
+					name_fn: $nf:ident
+					// 写像関数をカプセルした直列イテレータの型名
+					name_iter_serial: $nis:ident
+					// 写像関数をカプセルした並列イテレータの型名
+					name_iter_parallel: $nip:ident
+					// 写像関数となる構造体の型名
+					name_map_fn: $nmf:ident
+					// 写像関数を説明する文字列リテラル (省略可)
+					$( desc: $desc:literal )?
+					// イテレータ生成にあたって必要な引数 (省略可)
+					// 写像関数の構造体のフィールドの型にもなる
+					$( params: [ $( $pi:tt: $pt:ty ),+ ] )?
+					// 写像関数の構造体が `PhantomData` を使って保持する必要のある型 (省略可)
+					$( phantom_params: [ $( $ppt:ty ),+ ] )?
+					// 写像関数の構造体を定義するのに必要な型パラメータ
+					$( map_fn_type_params: [ $($ftp:ident),+ ] )?
+					// 写像関数が `MapFn` や `ParallelMapFn` トレイトの `impl` を与えるために必要な型パラメータ (省略可)
+					$( impl_type_params: [ $($itp:ident),+ ] )?
+					output_type: { $to:ty }
+					// `MapFn` や `IntoMap` の実装に必要な `where` 節 (省略可)
+					$( where_serial: { $($ws:tt)+ } )?
+					// `ParallelMapFn` や `ParallelIntoMap` の実装に必要な `where` 節 (省略可)
+					$( where_parallel: { $($wp:tt)+ } )?
+					// 写像関数の中身
+					// `self,input -> (処理内容)` という形で与える
+					call: { $si:ident, $ii:ident -> $($body:tt)+ }
+				} $($other_items:tt)* ]
+				source: { $($src:tt)* }
+				exports: [ $($exp:ident),* ]
+				parallel_exports: [ $($exp_p:ident),* ]
+			} $($other_modules:tt)* ]
+			into_map: {
+				into_map_trait: { $($im:tt)* }
+				into_parallel_map_trait: { $($ipm:tt)* }
 			}
+		} ) => {
+			make! {@each {
+				modules: [ {
+					name: $mn
+					item_type: { $($t),+: $ti }
+					items: [ $($other_items)* ]
+					source: { $($src)*
 
-			#[cfg(feature="parallel")]
-			impl<$($t,)+ $($($tp,)+)?> ParallelMapFn<$ti>
-			for $nmf <$($($pt,)+)? $($($ppt,)+)?>
-			$( where $($wp)+ )?
-			{
-				fn call(&$si,$ii:$ti) -> $to {
-					$($body)+
-				}
-			}
+						$( #[doc=concat!(
+							"`",stringify!($nf),"()` にて生成されるイテレータを構成する `ExtendedMap` 向けの関数。", $desc
+						)] )?
+						pub struct $nmf
+						<$($($ftp,)+)?>
+						($($(pub(super) $pt,)+)? $($(pub(super) PhantomData<$ppt>,)+)?);
 
-			$( #[doc=concat!(
-				"`",stringify!($nf),"()` にて生成されるイテレータ。", $desc
-			)] )?
-			pub type $nis<I $($(,$pt)+)? $($(,$ppt)+)?> = Map<I,$nmf <$($($pt,)+)? $($($ppt,)+)?>>;
+						impl<$($t,)+ $($($itp,)+)?> MapFn<$ti>
+						for $nmf <$($($ftp,)+)?>
+						$( where $($ws)+ )?
+						{
+							type Output = $to;
+							fn call_mut(&mut $si,$ii:$ti) -> $to {
+								$($body)+
+							}
+						}
 
-			#[cfg(feature="parallel")]
-			$( #[doc=concat!(
-				"`",stringify!($nf),"()` にて生成される並列イテレータ。", $desc
-			)] )?
-			pub type $nip<I $($(,$pt)+)? $($(,$ppt)+)?> = ParallelMap<I,$nmf <$($($pt,)+)? $($($ppt,)+)?>>;
+						#[cfg(feature="parallel")]
+						impl<$($t,)+ $($($itp,)+)?> ParallelMapFn<$ti>
+						for $nmf <$($($ftp,)+)?>
+						$( where $($wp)+ )?
+						{
+							fn call(&$si,$ii:$ti) -> $to {
+								$($body)+
+							}
+						}
 
-			make!{@each
-				item_type: { $($t),+: $ti }
-				items: [ $($other_items)* ]
-				into_map_trait: { $($im_t)*
-					$( #[doc=$desc] )?
-					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
-					-> $nis<Self $($(,$pt)+)? $($(,$ppt)+)?>
-					$( where $($ws)+ )?;
-				}
-				into_map_impl: { $($im_i)*
-					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
-					-> $nis<Self $($(,$pt)+)? $($(,$ppt)+)?>
-					$( where $($ws)+ )?
-					{ Map { iter: self, map_fn: $nmf ($($($pi,)+)? $($(PhantomData::<$ppt>,)+)?) } }
-				}
-				into_parallel_map_trait: { $($ipm_t)*
-					$( #[doc=$desc] )?
-					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
-					-> $nip<Self $($(,$pt)+)? $($(,$ppt)+)?>
-					$( where $($wp)+ )?;
-				}
-				into_parallel_map_impl: { $($ipm_i)*
-					fn $nf $(<$($tp),+>)? (self $($(,$pi:$pt)+)?)
-					-> $nip<Self $($(,$pt)+)? $($(,$ppt)+)?>
-					$( where $($wp)+ )?
-					{ ParallelMap { parent_iterator: self, map_fn: $nmf ($($($pi,)+)? $($(PhantomData::<$ppt>,)+)?) } }
-				}
-			}
+						$( #[doc=concat!(
+							"`",stringify!($nf),"()` にて生成されるイテレータ。", $desc
+						)] )?
+						pub type $nis<I $($(,$ftp)+)?> = Map<I,$nmf <$($($ftp,)+)?>>;
 
+						#[cfg(feature="parallel")]
+						$( #[doc=concat!(
+							"`",stringify!($nf),"()` にて生成される並列イテレータ。", $desc
+						)] )?
+						pub type $nip<I $($(,$ftp)+)?> = ParallelMap<I,$nmf <$($($ftp,)+)?>>;
+
+					}
+					exports: [ $($exp,)* $nis ]
+					parallel_exports: [ $($exp_p,)* $nip ]
+				} $($other_modules)* ]
+				into_map: {
+					into_map_trait: { $($im)*
+						$( #[doc=$desc] )?
+						fn $nf <$($t,)+ $($($itp,)+)?> (self $($(,$pi:$pt)+)?)
+						-> $nis<Self $($(,$ftp)+)?>
+						where Self: Iterator<Item=$ti> $(, $($ws)+ )?
+						{ Map { iter: self, map_fn: $mn::$nmf ($($($pi,)+)? $($(PhantomData::<$ppt>,)+)?) } }
+					}
+					into_parallel_map_trait: { $($ipm)*
+						$( #[doc=$desc] )?
+						fn $nf<$($t,)+ $($($itp,)+)?> (self $($(,$pi:$pt)+)?)
+						-> $nip<Self $($(,$ftp)+)?>
+						where Self: ParallelIterator<Item=$ti> $(, $($wp)+ )?
+						{ ParallelMap { parent_iterator: self, map_fn: $mn::$nmf ($($($pi,)+)? $($(PhantomData::<$ppt>,)+)?) } }
+					}
+				}
+			} }
 		};
-		(@each
-			item_type: { $($t:ident),+: $ti:ty }
-			items: []
-			into_map_trait: { $($im_t:tt)+ }
-			into_map_impl: { $($im_i:tt)+ }
-			into_parallel_map_trait: { $($ipm_t:tt)+ }
-			into_parallel_map_impl: { $($ipm_i:tt)+ }
-		) => {
+		(@each {
+			modules: [
+				{
+					name: $mn:ident
+					item_type: { $($t:ident),+: $ti:ty }
+					items: [ ]
+					source: { $($src:tt)+ }
+					exports: [ $($exp:ident),+ ]
+					parallel_exports: [ $($exp_p:ident),+ ]
+				}
+				$($other_modules:tt)*
+			]
+			into_map: {
+				into_map_trait: { $($im:tt)+ }
+				into_parallel_map_trait: { $($ipm:tt)+ }
+			}
+		} ) => {
+			pub mod $mn { $($src)+ }
+			pub use $mn::{ $($exp),+ };
+			#[cfg(feature="parallel")]
+			pub use $mn::{ $($exp_p),+ };
 
-			/// イテレータを拡張して、写像関連のイテレータを生成するメソッドを提供するトレイト
-			pub trait IntoMap<$($t),+>: Sized
-			{ $($im_t)+ }
+			make! {@each {
+				modules: [ $($other_modules)* ]
+				into_map: {
+					into_map_trait: { $($im)+ }
+					into_parallel_map_trait: { $($ipm)+ }
+				}
+			} }
+		};
+		(@each {
+			modules: [ ]
+			into_map: {
+				into_map_trait: { $($im:tt)+ }
+				into_parallel_map_trait: { $($ipm:tt)+ }
+			}
+		} ) => {
 
-			impl<I $(,$t)+> IntoMap<$($t),+> for I
-			where I: Iterator<Item=$ti>
-			{ $($im_i)+ }
+			/// 標準の `Iterator` を拡張して、イテレータ要素に対する様々な写像操作を行うイテレータアダプタを返すメソッドを提供します
+			pub trait IntoMap: Sized
+			{ $($im)+ }
+
+			impl<I: Iterator> IntoMap for I {}
 
 			#[cfg(feature="parallel")]
-			/// 並列イテレータを拡張して、写像関連のイテレータを生成するメソッドを提供するトレイト
-			pub trait IntoParallelMap<$($t),+>: Sized
-			{ $($ipm_t)+ }
+			/// rayon の並列イテレータ `ParallelIterator` を拡張して、イテレータ要素に対する様々な写像操作を行うイテレータアダプタを返すメソッドを提供します
+			pub trait IntoParallelMap: Sized
+			{ $($ipm)+ }
 
 			#[cfg(feature="parallel")]
-			impl<I $(,$t)+> IntoParallelMap<$($t),+> for I
-			where I: ParallelIterator<Item=$ti>
-			{ $($ipm_i)+ }
+			impl<I: ParallelIterator> IntoParallelMap for I {}
 
 		};
 	}
 
-	pub mod for_result {
-		use super::*;
-
-		make! {
+	make! { [
+		for_result: {
 			item_type: { T,E: Result<T,E> }
 			items: [
 				{
@@ -623,9 +684,10 @@ mod iter_impl {
 					name_iter_serial: MapOk
 					name_iter_parallel: ParallelMapOk
 					name_map_fn: MapOkFn
-					desc: "`Result<T,E>` 型の `Ok` の部分の値 `T` を `U` に写像させて `Result<U,E>` にする。 `Err` の場合はそのまま返される。"
+					desc: "イテレータ要素の `Result<T,E>` 型の `Ok` の部分の値 `T` を `U` に写像させて `Result<U,E>` にするイテレータを返します。 `Err` の場合はそのまま残します。"
 					params: [ f:F ]
-					type_params: [ U, F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ U, F ]
 					output_type: { Result<U,E> }
 					where_serial: { F: FnMut(T) -> U }
 					where_parallel: { F: Fn(T) -> U + Send + Sync }
@@ -636,9 +698,10 @@ mod iter_impl {
 					name_iter_serial: MapOkOr
 					name_iter_parallel: ParallelMapOkOr
 					name_map_fn: MapOkOrFn
-					desc: "`Result<T,E>` 型を `U` 型に写像する。入力が `Ok` の場合はクロージャにより `T` 型の値を `U` に写像させて出力し、 `Err` の場合はイテレータに与えられた `U` 型の値を複製して出力する。"
+					desc: "イテレータ要素の `Result<T,E>` 型を `U` 型に写像させるイテレータを返します。入力が `Ok` の場合はクロージャにより `T` 型の値を `U` に写像させて出力し、 `Err` の場合はイテレータに与えられた `U` 型の値を複製して返します。"
 					params: [ default:U, f:F ]
-					type_params: [ U, F ]
+					map_fn_type_params: [ U, F ]
+					impl_type_params: [ U, F ]
 					output_type: { U }
 					where_serial: { U: Clone, F: FnMut(T) -> U }
 					where_parallel: { U: Clone + Send + Sync, F: Fn(T) -> U + Send + Sync }
@@ -649,9 +712,10 @@ mod iter_impl {
 					name_iter_serial: MapErr
 					name_iter_parallel: ParallelMapErr
 					name_map_fn: MapErrFn
-					desc: "`Result<T,E>` 型の `Err` の部分の値 `E` を `G` に写像させて `Result<T,G>` にする。 `Ok` の場合はそのまま返される。"
+					desc: "イテレータ要素の `Result<T,E>` 型の `Err` の部分の値 `E` を `G` に写像させて `Result<T,G>` にするイテレータを返します。 `Ok` の場合はそのまま残します。"
 					params: [ f:F ]
-					type_params: [ G, F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ G, F ]
 					output_type: { Result<T,G> }
 					where_serial: { F: FnMut(E) -> G }
 					where_parallel: { F: Fn(E) -> G + Send + Sync }
@@ -662,58 +726,62 @@ mod iter_impl {
 					name_iter_serial: MapErrOr
 					name_iter_parallel: ParallelMapErrOr
 					name_map_fn: MapErrOrFn
-					desc: "`Result<T,E>` 型を `U` 型に写像する。入力が `Err` の場合はクロージャにより `E` 型の値を `U` に写像させて出力し、 `Ok` の場合はイテレータに与えられた `U` 型の値を複製して出力する。"
+					desc: "イテレータ要素の `Result<T,E>` 型を `U` 型に写像させるイテレータを返します。入力が `Err` の場合はクロージャにより `E` 型の値を `U` に写像させて出力し、 `Ok` の場合はイテレータに与えられた `U` 型の値を複製して返します。"
 					params: [ f:F, default:U ]
-					type_params: [ F, U ]
+					map_fn_type_params: [ F, U ]
+					impl_type_params: [ F, U ]
 					output_type: { U }
 					where_serial: { F: FnMut(E) -> U, U: Clone }
 					where_parallel: { F: Fn(E) -> U + Send + Sync, U: Clone + Send + Sync }
 					call: { self,input -> input.map_or_else(|i| self.0(i),|_| self.1.clone() ) }
 				}
 				{
-					name_fn: map_or_else
-					name_iter_serial: MapOrElse
-					name_iter_parallel: ParallelMapOrElse
-					name_map_fn: MapOrElseFn
-					desc: "`Result<T,E>` 型を `U` 型に写像する。入力が `Ok` の場合はクロージャ `FO` により `T` 型の値を `U` に写像させて出力し、入力が `Err` の場合はクロージャ `FE` により `U` 型に写像させて出力する。"
+					name_fn: map_ok_or_else
+					name_iter_serial: MapOkOrElse
+					name_iter_parallel: ParallelMapOkOrElse
+					name_map_fn: MapOkOrElseFn
+					desc: "イテレータ要素の `Result<T,E>` 型を `U` 型に写像させるイテレータを返します。入力が `Ok` の場合はクロージャ `FO` により `T` 型の値を `U` に写像させて出力し、入力が `Err` の場合はクロージャ `FE` により `U` 型に写像させて出力します。"
 					params: [ fn_err:FE, fn_ok:FO ]
-					type_params: [ U, FE, FO ]
+					map_fn_type_params: [ FE, FO ]
+					impl_type_params: [ U, FE, FO ]
 					output_type: { U }
 					where_serial: { FE: FnMut(E) -> U, FO: FnMut(T) -> U }
 					where_parallel: { FE: Fn(E) -> U + Send + Sync, FO: Fn(T) -> U + Send + Sync }
 					call: { self,input -> input.map_or_else(|i| self.0(i),|i| self.1(i) ) }
 				}
 				{
-					name_fn: unwrap_or
-					name_iter_serial: UnwrapOr
-					name_iter_parallel: ParallelUnwrapOr
-					name_map_fn: UnwrapOrFn
-					desc: "`Result<T,E>` 型をアンラップする。入力が `Ok` の場合は `T` 型の内包データが出力され、入力が `Err` の場合はイテレータに与えられた値を複製して出力する。"
+					name_fn: unwrap_ok_or
+					name_iter_serial: UnwrapOkOr
+					name_iter_parallel: ParallelUnwrapOkOr
+					name_map_fn: UnwrapOkOrFn
+					desc: "イテレータ要素の `Result<T,E>` 型をアンラップして `T` 型にするイテレータを返します。入力が `Ok` の場合は `T` 型の内包データが出力され、入力が `Err` の場合は引数に与えられた `T` 型の値を複製して返します。"
 					params: [ default:T ]
+					map_fn_type_params: [ T ]
 					output_type: { T }
 					where_serial: { T: Clone }
 					where_parallel: { T: Clone + Send + Sync }
 					call: { self,input -> input.map_or_else(|_| self.0.clone(), |i| i ) }
 				}
 				{
-					name_fn: unwrap_or_else
-					name_iter_serial: UnwrapOrElse
-					name_iter_parallel: ParallelUnwrapOrElse
-					name_map_fn: UnwrapOrElseFn
-					desc: "`Result<T,E>` 型をアンラップする。入力が `Ok` の場合は内包データが出力され、入力が `Err` の場合はクロージャを実行し、 `T` 型の返値を出力する。"
+					name_fn: unwrap_ok_or_else
+					name_iter_serial: UnwrapOkOrElse
+					name_iter_parallel: ParallelUnwrapOkOrElse
+					name_map_fn: UnwrapOkOrElseFn
+					desc: "イテレータ要素の `Result<T,E>` 型をアンラップして `T` 型にするイテレータを返します。入力が `Ok` の場合は `T` 型の内包データが出力され、入力が `Err` の場合はクロージャを実行し、 `T` 型の返値を返します。"
 					params: [ f:F ]
-					type_params: [ F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ F ]
 					output_type: { T }
 					where_serial: { F: FnMut(E) -> T }
 					where_parallel: { F: Fn(E) -> T + Send + Sync }
 					call: { self,input -> input.map_or_else(|i| self.0(i),|i| i ) }
 				}
 				{
-					name_fn: unwrap_or_default
-					name_iter_serial: UnwrapOrDefault
-					name_iter_parallel: ParallelUnwrapOrDefault
-					name_map_fn: UnwrapOrDefaultFn
-					desc: "`Result<T,E>` 型をアンラップする。入力が `Ok` の場合は `T` 型の内包データが出力され、入力が `Err` の場合は `T` のデフォルト値を出力する。"
+					name_fn: unwrap_ok_or_default
+					name_iter_serial: UnwrapOkOrDefault
+					name_iter_parallel: ParallelUnwrapOkOrDefault
+					name_map_fn: UnwrapOkOrDefaultFn
+					desc: "イテレータ要素の `Result<T,E>` 型をアンラップして `T` 型にするイテレータを返します。入力が `Ok` の場合は `T` 型の内包データが出力され、入力が `Err` の場合は `T` のデフォルト値を返します。"
 					output_type: { T }
 					where_serial: { T: Default }
 					where_parallel: { T: Default }
@@ -724,8 +792,9 @@ mod iter_impl {
 					name_iter_serial: UnwrapErrOr
 					name_iter_parallel: ParallelUnwrapErrOr
 					name_map_fn: UnwrapErrOrFn
-					desc: "`Result<T,E>` 型をアンラップする。入力が `Err` の場合は `E` 型の内包データが出力され、入力が `Ok` の場合はイテレータに与えられた値を複製して出力する。"
+					desc: "イテレータ要素の `Result<T,E>` 型をアンラップして `E` 型にするイテレータを返します。入力が `Err` の場合は `E` 型の内包データが出力され、入力が `Ok` の場合は引数に与えられた `E` 型の値を複製して返します。"
 					params: [ default:E ]
+					map_fn_type_params: [ E ]
 					output_type: { E }
 					where_serial: { E: Clone }
 					where_parallel: { E: Clone + Send + Sync }
@@ -736,9 +805,10 @@ mod iter_impl {
 					name_iter_serial: UnwrapErrOrElse
 					name_iter_parallel: ParallelUnwrapErrOrElse
 					name_map_fn: UnwrapErrOrElseFn
-					desc: "`Result<T,E>` 型をアンラップする。入力が `Err` の場合は内包データが出力され、入力が `Ok` の場合はクロージャを実行し、 `E` 型の返値を出力する。"
+					desc: "イテレータ要素の `Result<T,E>` 型をアンラップして `E` 型にするイテレータを返します。入力が `Err` の場合は内包データが出力され、入力が `Ok` の場合はクロージャを実行し、 `E` 型の返値を返します。"
 					params: [ f:F ]
-					type_params: [ F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ F ]
 					output_type: { E }
 					where_serial: { F: FnMut(T) -> E }
 					where_parallel: { F: Fn(T) -> E + Send + Sync }
@@ -749,33 +819,35 @@ mod iter_impl {
 					name_iter_serial: UnwrapErrOrDefault
 					name_iter_parallel: ParallelUnwrapErrOrDefault
 					name_map_fn: UnwrapErrOrDefaultFn
-					desc: "`Result<T,E>` 型をアンラップする。入力が `Err` の場合は `E` 型の内包データが出力され、入力が `Ok` の場合は `E` のデフォルト値を出力する。"
+					desc: "イテレータ要素の `Result<T,E>` 型をアンラップして `E` 型にするイテレータを返します。入力が `Err` の場合は `E` 型の内包データが出力され、入力が `Ok` の場合は `E` のデフォルト値を返します。"
 					output_type: { E }
 					where_serial: { E: Default }
 					where_parallel: { E: Default }
 					call: { self,input -> input.map_or_else(|i| i, |_| E::default() ) }
 				}
 				{
-					name_fn: and_then
-					name_iter_serial: AndThen
-					name_iter_parallel: ParallelAndThen
-					name_map_fn: AndThenFn
-					desc: "論理積をとる。入力の `Result<T,E>` 型が `Ok` の場合にクロージャを実行し、その返値が `Ok` の場合のみ `Ok` が出力される。返値が `Err` の場合と、入力が `Err` の場合は `Err` が出力される。"
+					name_fn: ok_and_then
+					name_iter_serial: OkAndThen
+					name_iter_parallel: ParallelOkAndThen
+					name_map_fn: OkAndThenFn
+					desc: "イテレータ要素の `Result<T,E>` 型に対して論理積をとるイテレータを返します。つまり新しいイテレータは、入力の `Result<T,E>` 型が `Ok` の場合にクロージャを実行し、その返値が `Ok` の場合のみ `Ok` を返します。クロージャの返値が `Err` の場合と入力が `Err` の場合は `Err` を返します。"
 					params: [ f:F ]
-					type_params: [ U, F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ U, F ]
 					output_type: { Result<U,E> }
 					where_serial: { F: FnMut(T) -> Result<U,E> }
 					where_parallel: { F: Fn(T) -> Result<U,E> + Send + Sync }
 					call: { self,input -> input.and_then(|i| self.0(i) ) }
 				}
 				{
-					name_fn: or_else
-					name_iter_serial: OrElse
-					name_iter_parallel: ParallelOrElse
-					name_map_fn: OrElseFn
-					desc: "論理和をとる。入力の `Result<T,E>` 型が `Ok` の場合はそのまま出力され、 `Err` の場合にクロージャを実行し、その返値が出力される。"
+					name_fn: ok_or_else
+					name_iter_serial: OkOrElse
+					name_iter_parallel: ParallelOkOrElse
+					name_map_fn: OkOrElseFn
+					desc: "イテレータ要素の `Result<T,E>` 型に対して論理和をとるイテレータを返します。つまり新しいイテレータは、入力の `Result<T,E>` 型が `Ok` の場合はそのまま返され、 `Err` の場合にクロージャを実行し、その返値が返されます。"
 					params: [ f:F ]
-					type_params: [ G, F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ G, F ]
 					output_type: { Result<T,G> }
 					where_serial: { F: FnMut(E) -> Result<T,G> }
 					where_parallel: { F: Fn(E) -> Result<T,G> + Send + Sync }
@@ -783,12 +855,7 @@ mod iter_impl {
 				}
 			]
 		}
-	}
-
-	pub mod for_option {
-		use super::*;
-
-		make! {
+		for_option: {
 			item_type: { T: Option<T> }
 			items: [
 				{
@@ -796,97 +863,76 @@ mod iter_impl {
 					name_iter_serial: MapSome
 					name_iter_parallel: ParallelMapSome
 					name_map_fn: MapSomeFn
-					desc: "`Option<T>` 型を `Option<U>` 型に写像する。入力が `Some` の場合はクロージャにより `T` 型の値を `U` に写像させて `Some` として出力し、入力が `None` の場合はそのまま出力させる。"
+					desc: "イテレータ要素の `Option<T>` 型を `Option<U>` 型に写像するイテレータを返します。入力が `Some` の場合はクロージャにより `T` 型の値を `U` に写像させて `Some` として返し、入力が `None` の場合はそのまま返します。"
 					params: [ f:F ]
-					type_params: [ U, F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ U, F ]
 					output_type: { Option<U> }
 					where_serial: { F: FnMut(T) -> U }
 					where_parallel: { F: Fn(T) -> U + Send + Sync }
 					call: { self,input -> input.map(|i| self.0(i) ) }
 				}
 				{
-					name_fn: map_some_or
-					name_iter_serial: MapSomeOr
-					name_iter_parallel: ParallelMapSomeOr
-					name_map_fn: MapSomeOrFn
-					desc: "`Option<T>` 型を `U` 型に写像する。入力が `Some` の場合はクロージャにより `T` 型の値を `U` に写像させて出力し、 `None` の場合はイテレータに与えられた `U` 型の値を複製して出力する。"
-					params: [ default:U, f:F ]
-					type_params: [ U, F ]
-					output_type: { U }
-					where_serial: { U: Clone, F: FnMut(T) -> U }
-					where_parallel: { U: Clone + Send + Sync, F: Fn(T) -> U + Send + Sync }
-					call: { self,input -> input.map_or_else(|| self.0.clone(),|i| self.1(i) ) }
-				}
-				{
-					name_fn: map_some_or_else
-					name_iter_serial: MapSomeOrElse
-					name_iter_parallel: ParallelMapSomeOrElse
-					name_map_fn: MapSomeOrElseFn
-					desc: "`Option<T>` 型を `U` 型に写像する。入力が `Some` の場合はクロージャ `FS` により `T` 型の値を `U` に写像させて出力し、入力が `None` の場合はもう1つのクロージャ `FN` を実行して、 `U` 型の返値を出力する。"
-					params: [ fn_none:FN, fn_some:FS ]
-					type_params: [ U, FN, FS ]
-					output_type: { U }
-					where_serial: { FN: FnMut() -> U, FS: FnMut(T) -> U }
-					where_parallel: { FN: Fn() -> U + Send + Sync, FS: Fn(T) -> U + Send + Sync }
-					call: { self,input -> input.map_or_else(|| self.0(),|i| self.1(i) ) }
-				}
-				{
-					name_fn: unwrap_or
-					name_iter_serial: UnwrapOr
-					name_iter_parallel: ParallelUnwrapOr
-					name_map_fn: UnwrapOrFn
-					desc: "`Option<T>` 型をアンラップする。入力が `Some` の場合は `T` 型の内包データが出力され、入力が `None` の場合はイテレータに与えられた値を複製して出力する。"
+					name_fn: unwrap_some_or
+					name_iter_serial: UnwrapSomeOr
+					name_iter_parallel: ParallelUnwrapSomeOr
+					name_map_fn: UnwrapSomeOrFn
+					desc: "イテレータ要素の `Option<T>` 型をアンラップして `T` 型にするイテレータを返します。入力が `Some` の場合は `T` 型の内包データが返され、入力が `None` の場合はイテレータに与えられた値を複製して返します。"
 					params: [ default:T ]
+					map_fn_type_params: [ T ]
 					output_type: { T }
 					where_serial: { T: Clone }
 					where_parallel: { T: Clone + Send + Sync }
 					call: { self,input -> input.unwrap_or_else(|| self.0.clone() ) }
 				}
 				{
-					name_fn: unwrap_or_else
-					name_iter_serial: UnwrapOrElse
-					name_iter_parallel: ParallelUnwrapOrElse
-					name_map_fn: UnwrapOrElseFn
-					desc: "`Option<T>` 型をアンラップする。入力が `Some` の場合は内包データが出力され、入力が `None` の場合はクロージャを実行し、 `T` 型の返値を出力する。"
+					name_fn: unwrap_some_or_else
+					name_iter_serial: UnwrapSomeOrElse
+					name_iter_parallel: ParallelUnwrapSomeOrElse
+					name_map_fn: UnwrapSomeOrElseFn
+					desc: "イテレータ要素の `Option<T>` 型をアンラップして `T` 型にするイテレータを返します。入力が `Some` の場合は `T` 型の内包データが返され、入力が `None` の場合はクロージャを実行し、 `T` 型の返値を返します。"
 					params: [ f:F ]
-					type_params: [ F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ F ]
 					output_type: { T }
 					where_serial: { F: FnMut() -> T }
 					where_parallel: { F: Fn() -> T + Send + Sync }
 					call: { self,input -> input.unwrap_or_else(|| self.0() ) }
 				}
 				{
-					name_fn: unwrap_or_default
-					name_iter_serial: UnwrapOrDefault
-					name_iter_parallel: ParallelUnwrapOrDefault
-					name_map_fn: UnwrapOrDefaultFn
-					desc: "`Option<T>` 型をアンラップする。入力が `Some` の場合は `T` 型の内包データが出力され、入力が `None` の場合は `T` のデフォルト値を出力する。"
+					name_fn: unwrap_some_or_default
+					name_iter_serial: UnwrapSomeOrDefault
+					name_iter_parallel: ParallelUnwrapSomeOrDefault
+					name_map_fn: UnwrapSomeOrDefaultFn
+					desc: "イテレータ要素の `Option<T>` 型をアンラップして `T` 型にするイテレータを返します。入力が `Some` の場合は `T` 型の内包データが返され、入力が `None` の場合は `T` のデフォルト値を返します。"
 					output_type: { T }
 					where_serial: { T: Default }
 					where_parallel: { T: Default }
 					call: { self,input -> input.unwrap_or_default() }
 				}
 				{
-					name_fn: and_then
-					name_iter_serial: AndThen
-					name_iter_parallel: ParallelAndThen
-					name_map_fn: AndThenFn
-					desc: "論理積をとる。入力の `Option<T>` 型が `Some` の場合にクロージャを実行し、その返値が `Some` の場合のみ `Some` が出力される。返値が `None` の場合と、入力が `None` の場合は `None` が出力される。"
+					name_fn: some_and_then
+					name_iter_serial: SomeAndThen
+					name_iter_parallel: ParallelSomeAndThen
+					name_map_fn: SomeAndThenFn
+					desc: "イテレータ要素の `Option<T>` 型に対して論理積をとるイテレータを返します。つまり新しいイテレータは、入力の `Option<T>` 型が `Some` の場合にクロージャを実行し、その返値が `Some` の場合のみ `Some` を返します。クロージャの返値が `None` の場合と、入力が `None` の場合は `None` を返します。"
 					params: [ f:F ]
-					type_params: [ U, F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ U, F ]
 					output_type: { Option<U> }
 					where_serial: { F: FnMut(T) -> Option<U> }
 					where_parallel: { F: Fn(T) -> Option<U> + Send + Sync }
 					call: { self,input -> input.and_then(|i| self.0(i) ) }
 				}
 				{
-					name_fn: or_else
-					name_iter_serial: OrElse
-					name_iter_parallel: ParallelOrElse
-					name_map_fn: OrElseFn
-					desc: "論理和をとる。入力の `Option<T>` 型が `Some` の場合はそのまま出力され、 `None` の場合にクロージャを実行し、その返値が出力される。"
+					name_fn: some_or_else
+					name_iter_serial: SomeOrElse
+					name_iter_parallel: ParallelSomeOrElse
+					name_map_fn: SomeOrElseFn
+					desc: "イテレータ要素の `Option<T>` 型に対して論理和をとるイテレータを返します。つまり新しいイテレータは、入力の `Option<T>` 型が `Some` の場合はそのまま返され、 `None` の場合にクロージャを実行し、その返値が返されます。"
 					params: [ f:F ]
-					type_params: [ F ]
+					map_fn_type_params: [ F ]
+					impl_type_params: [ F ]
 					output_type: { Option<T> }
 					where_serial: { F: FnMut() -> Option<T> }
 					where_parallel: { F: Fn() -> Option<T> + Send + Sync }
@@ -894,12 +940,7 @@ mod iter_impl {
 				}
 			]
 		}
-	}
-
-	pub mod for_impl_into {
-		use super::*;
-
-		make! {
+		for_impl_into: {
 			item_type: { T: T }
 			items: [
 				{
@@ -907,9 +948,10 @@ mod iter_impl {
 					name_iter_serial: MapInto
 					name_iter_parallel: ParallelMapInto
 					name_map_fn: MapIntoFn
-					desc: "`Into` トレイトに依拠して `T` を `U` に変換する。"
+					desc: "イテレータ要素の `T` 型を `U` 型にするイテレータを返します。変換にあたっては `Into` トレイトに依拠します。"
 					phantom_params: [ U ]
-					type_params: [ U ]
+					map_fn_type_params: [ U ]
+					impl_type_params: [ U ]
 					output_type: { U }
 					where_serial: { T: Into<U> }
 					where_parallel: { T: Into<U>, U: Send + Sync }
@@ -917,7 +959,24 @@ mod iter_impl {
 				}
 			]
 		}
-	}
+		for_const_fn: {
+			item_type: { T: T }
+			items: [
+				{
+					name_fn: map_const_fn
+					name_iter_serial: MapConst
+					name_iter_parallel: ParallelMapConst
+					name_map_fn: MapConstFn
+					desc: "与えられた関数を実行してイテレータ要素の `T` 型を `U` 型にするイテレータを返します。通常の `.map(|T|->U)` とは異なり、引数として受け取れる関数は関数ポインタのみです。従って制約があるものの、イテレータアダプタの型を簡素にできます。"
+					params: [ f: fn(T) -> U ]
+					map_fn_type_params: [ T, U ]
+					impl_type_params: [ U ]
+					output_type: { U }
+					call: { self,input -> self.0(input) }
+				}
+			]
+		}
+	] }
 
 }
 pub use iter_impl::*;
@@ -929,9 +988,7 @@ pub(crate) mod for_prelude {
 			ExtendedMap as ExtendedMapForIterator,
 			ExtendedMapFn as ExtendedMapFnForIterator
 		},
-		for_result::IntoMap as MapExtensionForResultIterator,
-		for_option::IntoMap as MapExtensionForOptionIterator,
-		for_impl_into::IntoMap as MapExtensionForImplIntoIterator
+		IntoMap
 	};
 	#[cfg(feature="parallel")]
 	pub use super::{
@@ -939,8 +996,6 @@ pub(crate) mod for_prelude {
 			ExtendedMap as ExtendedMapForParallelIterator,
 			ExtendedMapFn as ExtendedMapFnForParallelIterator
 		},
-		for_result::IntoParallelMap as MapExtensionForResultParallelIterator,
-		for_option::IntoParallelMap as MapExtensionForOptionParallelIterator,
-		for_impl_into::IntoParallelMap as MapExtensionForImplIntoParallelIterator
+		IntoParallelMap
 	};
 }
