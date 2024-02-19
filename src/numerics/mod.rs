@@ -22,6 +22,4 @@ mod float;
 pub use float::*;
 
 #[cfg(feature="numerics")]
-mod special_functions;
-#[cfg(feature="numerics")]
-pub use special_functions::*;
+pub mod special_functions;
